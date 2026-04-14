@@ -1371,8 +1371,7 @@ public class UserProcessing extends ObjectProcessing {
     public String getSelectorSingle(OperationOptions options) {
 
         if (options != null) {
-
-            return selector(getSchemaTranslator().filter(ObjectClass.ACCOUNT_NAME, options,
+            String[] filtered = getSchemaTranslator().filter(ObjectClass.ACCOUNT_NAME, options,
                     ATTR_ACCOUNTENABLED, ATTR_DISPLAYNAME,
                     ATTR_ONPREMISESIMMUTABLEID, ATTR_MAILNICKNAME, ATTR_USERPRINCIPALNAME, ATTR_ABOUTME,
                     ATTR_BIRTHDAY, ATTR_BUSINESSPHONES, ATTR_CITY, ATTR_COMPANYNAME, ATTR_COUNTRY, ATTR_DEPARTMENT,
@@ -1387,7 +1386,23 @@ public class UserProcessing extends ObjectProcessing {
                     ATTR_EXTERNALUSERSTATE, ATTR_EXTERNALUSERSTATECHANGEDATETIME, ATTR_MANAGER,
                     ATTR_EMPLOYEE_HIRE_DATE, ATTR_EMPLOYEE_LEAVE_DATE_TIME, ATTR_EMPLOYEE_TYPE,
                     ATTR_FAX_NUMBER, ATTR_EMPLOYEE_ID, ATTR_ONPREMISESEXTENSIONATTRIBUTES
-            ));
+            );
+
+            // Exclude SPO attributes unless they were explicitly requested via attributesToGet.
+            // SPO attributes (aboutMe, mySite, birthday, etc.) require a SharePoint Online license;
+            // including them in $select causes HTTP 400 on tenants without SPO.
+            // When SchemaTranslator.filter() falls back to returning all candidates (because
+            // attributesToGet is empty), SPO attributes leak into $select unintentionally.
+            String[] explicitAttrs = options.getAttributesToGet();
+            Set<String> explicitlyRequested = explicitAttrs != null
+                    ? new HashSet<>(Arrays.asList(explicitAttrs))
+                    : Collections.emptySet();
+
+            filtered = Arrays.stream(filtered)
+                    .filter(attr -> !SPO_ATTRS.contains(attr) || explicitlyRequested.contains(attr))
+                    .toArray(String[]::new);
+
+            return selector(filtered);
         } else {
 
             return selector(
