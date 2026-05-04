@@ -164,6 +164,18 @@ public class LicenseTest extends BasicConfigurationForTests {
                 Attribute attrSkuId = co.getAttributeByName(LicenseProcessing.ATTR_SKUID);
                 String skuId = attrSkuId == null ? null : AttributeUtil.getAsStringValue(attrSkuId);
                 LOG.info("License: skuId {0}, skuPartNumber {1}", skuId, co.getName().getNameValue());
+
+                assertNotNull(co.getAttributeByName(LicenseProcessing.ATTR_PREPAIDUNITS__ENABLED),
+                        "prepaidUnits.enabled should be present");
+                assertNotNull(co.getAttributeByName(LicenseProcessing.ATTR_PREPAIDUNITS__SUSPENDED),
+                        "prepaidUnits.suspended should be present");
+                assertNotNull(co.getAttributeByName(LicenseProcessing.ATTR_PREPAIDUNITS__WARNING),
+                        "prepaidUnits.warning should be present");
+                assertNotNull(co.getAttributeByName(LicenseProcessing.ATTR_PREPAIDUNITS__LOCKEDOUT),
+                        "prepaidUnits.lockedOut should be present");
+                assertNotNull(co.getAttributeByName(LicenseProcessing.ATTR_AVAILABLEUNITS),
+                        "availableUnits should be present");
+
                 if (skuId != null)
                     remains.remove(skuId);
             }
@@ -195,6 +207,21 @@ public class LicenseTest extends BasicConfigurationForTests {
                 String skuId = attrSkuId == null ? null : AttributeUtil.getAsStringValue(attrSkuId);
                 String id = attrId == null ? null : AttributeUtil.getAsStringValue(attrId);
                 LOG.info("License: skuId: {0}, skuPartNumber: {1}, id: {2}", skuId, co.getName().getNameValue(), id);
+
+                assertNotNull(co.getAttributeByName(LicenseProcessing.ATTR_PREPAIDUNITS__ENABLED),
+                        "prepaidUnits.enabled should be present");
+                assertNotNull(co.getAttributeByName(LicenseProcessing.ATTR_PREPAIDUNITS__SUSPENDED),
+                        "prepaidUnits.suspended should be present");
+                assertNotNull(co.getAttributeByName(LicenseProcessing.ATTR_PREPAIDUNITS__WARNING),
+                        "prepaidUnits.warning should be present");
+                assertNotNull(co.getAttributeByName(LicenseProcessing.ATTR_PREPAIDUNITS__LOCKEDOUT),
+                        "prepaidUnits.lockedOut should be present");
+
+                Attribute attrAvailable = co.getAttributeByName(LicenseProcessing.ATTR_AVAILABLEUNITS);
+                assertNotNull(attrAvailable, "availableUnits should be present");
+                Integer availableUnits = AttributeUtil.getIntegerValue(attrAvailable);
+                assertNotNull(availableUnits, "availableUnits should have a value");
+                LOG.info("License: availableUnits: {0}", availableUnits);
 
                 if (idFromHandler == null) {
 
