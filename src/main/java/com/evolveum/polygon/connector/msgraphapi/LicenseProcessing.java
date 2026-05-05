@@ -28,7 +28,12 @@ public class LicenseProcessing extends ObjectProcessing {
     public static final String ATTR_ENABLED = "enabled";
     public static final String ATTR_SUSPENDED = "suspended";
     public static final String ATTR_WARNING = "warning";
+    public static final String ATTR_LOCKEDOUT = "lockedOut";
     public static final String ATTR_PREPAIDUNITS__ENABLED = ATTR_PREPAIDUNITS + "." + ATTR_ENABLED;
+    public static final String ATTR_PREPAIDUNITS__SUSPENDED = ATTR_PREPAIDUNITS + "." + ATTR_SUSPENDED;
+    public static final String ATTR_PREPAIDUNITS__WARNING = ATTR_PREPAIDUNITS + "." + ATTR_WARNING;
+    public static final String ATTR_PREPAIDUNITS__LOCKEDOUT = ATTR_PREPAIDUNITS + "." + ATTR_LOCKEDOUT;
+    public static final String ATTR_AVAILABLEUNITS = "availableUnits";
     // service plans
     public static final String ATTR_SERVICEPLANS = "servicePlans";
     public static final String ATTR_SERVICEPLANID = "servicePlanId";
@@ -100,7 +105,26 @@ public class LicenseProcessing extends ObjectProcessing {
                 .setCreateable(false)
                 .setUpdateable(false)
                 .setType(Integer.class)
-                .setMultiValued(true)
+                .build());
+        attributes.add(new AttributeInfoBuilder(ATTR_PREPAIDUNITS__SUSPENDED)
+                .setCreateable(false)
+                .setUpdateable(false)
+                .setType(Integer.class)
+                .build());
+        attributes.add(new AttributeInfoBuilder(ATTR_PREPAIDUNITS__WARNING)
+                .setCreateable(false)
+                .setUpdateable(false)
+                .setType(Integer.class)
+                .build());
+        attributes.add(new AttributeInfoBuilder(ATTR_PREPAIDUNITS__LOCKEDOUT)
+                .setCreateable(false)
+                .setUpdateable(false)
+                .setType(Integer.class)
+                .build());
+        attributes.add(new AttributeInfoBuilder(ATTR_AVAILABLEUNITS)
+                .setCreateable(false)
+                .setUpdateable(false)
+                .setType(Integer.class)
                 .build());
         attributes.add(new AttributeInfoBuilder(ATTR_SERVICEPLANS__SERVICEPLANID)
                 .setCreateable(false)
@@ -173,6 +197,17 @@ public class LicenseProcessing extends ObjectProcessing {
         getIfExists(json, ATTR_SKUID, String.class, builder);
         getIfExists(json, ATTR_SKUPAATNUMBER, String.class, builder);
         getFromItemIfExists(json, ATTR_PREPAIDUNITS, ATTR_ENABLED, Integer.class, builder);
+        getFromItemIfExists(json, ATTR_PREPAIDUNITS, ATTR_SUSPENDED, Integer.class, builder);
+        getFromItemIfExists(json, ATTR_PREPAIDUNITS, ATTR_WARNING, Integer.class, builder);
+        getFromItemIfExists(json, ATTR_PREPAIDUNITS, ATTR_LOCKEDOUT, Integer.class, builder);
+
+        int enabled = json.has(ATTR_PREPAIDUNITS) && json.getJSONObject(ATTR_PREPAIDUNITS).has(ATTR_ENABLED)
+                ? json.getJSONObject(ATTR_PREPAIDUNITS).getInt(ATTR_ENABLED) : 0;
+        int warning = json.has(ATTR_PREPAIDUNITS) && json.getJSONObject(ATTR_PREPAIDUNITS).has(ATTR_WARNING)
+                ? json.getJSONObject(ATTR_PREPAIDUNITS).getInt(ATTR_WARNING) : 0;
+        int consumed = json.has(ATTR_CONSUMEDUNITS) ? json.getInt(ATTR_CONSUMEDUNITS) : 0;
+        builder.addAttribute(ATTR_AVAILABLEUNITS, (enabled + warning) - consumed);
+
         getFromArrayIfExists(json, ATTR_SERVICEPLANS, ATTR_SERVICEPLANID, String.class, builder);
 
         return handler.handle(builder.build());
