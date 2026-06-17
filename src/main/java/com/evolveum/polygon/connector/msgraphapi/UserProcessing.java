@@ -1477,7 +1477,11 @@ public class UserProcessing extends ObjectProcessing {
         for (AttributeInfo extAttr : directoryExtensionSchema()) {
             directoryExtensions.append(extAttr.getName()).append(",");
         }
-        directoryExtensions = new StringBuilder(directoryExtensions.substring(0, directoryExtensions.length() - 1));
+        if (directoryExtensions.length() > 0) {
+            directoryExtensions = new StringBuilder(directoryExtensions.substring(0, directoryExtensions.length() - 1));
+        } else {
+            directoryExtensions = new StringBuilder();
+        }
         if (options != null) {
             List<String> attrs = new ArrayList<>(List.of(
                     ATTR_ACCOUNTENABLED, ATTR_DISPLAYNAME,
