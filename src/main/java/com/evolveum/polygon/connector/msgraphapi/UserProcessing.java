@@ -143,6 +143,7 @@ public class UserProcessing extends ObjectProcessing {
     private static final String ATTR_INVITE_DISPNAME = "invitedUserDisplayName";
     private static final String ATTR_INVITE_SEND_MESSAGE = "sendInvitationMessage";
     private static final String ATTR_INVITE_MSG_INFO = "invitedUserMessageInfo";
+    private static final String ATTR_CUSTOMIZED_MESSAGE_BODY = "customizedMessageBody";
     private static final String ATTR_INVITED_USER_TYPE = "invitedUserType";
 
     // GUEST ACCOUNT STATUS
@@ -916,6 +917,7 @@ public class UserProcessing extends ObjectProcessing {
         String upn = null;
         String displayName = null;
         String userType = null;
+        boolean hasPassword = false;
         Attribute managerId = null;
         Attribute assignedLicenses = null;
         Attribute photo = null;
@@ -942,14 +944,27 @@ public class UserProcessing extends ObjectProcessing {
                 case ATTR_USERPHOTO:
                     photo = attribute;
                     break;
+                case ATTR_ICF_PASSWORD:
+                    hasPassword = true;
+                    break;
             }
         }
 
-        final boolean hasUPN = upn != null;
-        final boolean invite = mail != null &&
-                !mail.split("@")[1].equals(getConfiguration().getTenantId()) &&
-                getConfiguration().isInviteGuests() &&
-                !hasUPN;
+        final boolean invite = getConfiguration().isInviteGuests() && StringUtils.isNotBlank(mail) && "Guest".equalsIgnoreCase(userType);
+
+        if (invite && StringUtils.isNotBlank(upn)) {
+            throw new InvalidAttributeValueException(
+                    "userPrincipalName must not be provided when creating guest by invitation. " +
+                            "Map mail and userType=Guest only."
+            );
+        }
+
+        if (invite && hasPassword) {
+            throw new InvalidAttributeValueException(
+                    "Password must not be provided when creating guest by invitation. " +
+                            "Guest authentication is handled by Microsoft Entra invitation redemption."
+            );
+        }
 
         final Uid newUid;
         if (invite) {
@@ -1212,7 +1227,7 @@ public class UserProcessing extends ObjectProcessing {
     }
 
 
-    private JSONObject buildInvitation(String displayName, String mail, String userType) {
+    /*private JSONObject buildInvitation(String displayName, String mail, String userType) {
         final JSONObject invitation = new JSONObject()
                 .put(ATTR_INVITE_SEND_MESSAGE, getConfiguration().isSendInviteMail())
                 .put(ATTR_INVITE_MSG_INFO, getConfiguration().getInviteMessage())
@@ -1221,6 +1236,48 @@ public class UserProcessing extends ObjectProcessing {
         if (displayName != null) invitation.put(ATTR_INVITE_DISPNAME, displayName);
         if (mail != null) invitation.put(ATTR_INVITED_USER_EMAIL, mail);
         if (userType != null) invitation.put(ATTR_INVITED_USER_TYPE, userType);
+
+        return invitation;
+    }*/
+    private JSONObject buildInvitation(
+            String displayName,
+            String mail,
+            String userType) {
+
+        final JSONObject invitation = new JSONObject()
+                .put(
+                        ATTR_INVITE_SEND_MESSAGE,
+                        getConfiguration().isSendInviteMail())
+                .put(
+                        ATTR_INVITE_REDIRECT,
+                        getConfiguration().getInviteRedirectUrl());
+
+        if (StringUtils.isNotBlank(displayName)) {
+            invitation.put(ATTR_INVITE_DISPNAME, displayName);
+        }
+
+        if (StringUtils.isNotBlank(mail)) {
+            invitation.put(ATTR_INVITED_USER_EMAIL, mail);
+        }
+
+        invitation.put(
+                ATTR_INVITED_USER_TYPE,
+                StringUtils.defaultIfBlank(userType, "Guest"));
+
+        String inviteMessage = getConfiguration().getInviteMessage();
+
+        if (getConfiguration().isSendInviteMail()
+                && StringUtils.isNotBlank(inviteMessage)) {
+
+            JSONObject messageInfo = new JSONObject()
+                    .put(
+                            ATTR_CUSTOMIZED_MESSAGE_BODY,
+                            inviteMessage);
+
+            invitation.put(
+                    ATTR_INVITE_MSG_INFO,
+                    messageInfo);
+        }
 
         return invitation;
     }

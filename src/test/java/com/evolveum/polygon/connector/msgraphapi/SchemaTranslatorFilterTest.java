@@ -10,7 +10,7 @@ import static org.testng.AssertJUnit.*;
 
 @Test(groups = "unit")
 public class SchemaTranslatorFilterTest {
-    SchemaTranslator schemaTranslator = new SchemaTranslator(null);
+    SchemaTranslator schemaTranslator = new MockGraphEndpoint(null).getSchemaTranslator();
 
     @Test
     void testFilterWithAttrToGetOperationOptions() {

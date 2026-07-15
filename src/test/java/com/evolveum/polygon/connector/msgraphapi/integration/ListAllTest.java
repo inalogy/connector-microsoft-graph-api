@@ -4,7 +4,7 @@ import com.evolveum.polygon.connector.msgraphapi.MSGraphConnector;
 import static com.evolveum.polygon.connector.msgraphapi.RoleProcessing.ROLE_NAME;
 import com.evolveum.polygon.connector.msgraphapi.common.TestSearchResultsHandler;
 import org.identityconnectors.framework.common.objects.*;
-import org.junit.Assert;
+import org.testng.Assert;
 import org.testng.annotations.Test;
 
 import java.util.*;

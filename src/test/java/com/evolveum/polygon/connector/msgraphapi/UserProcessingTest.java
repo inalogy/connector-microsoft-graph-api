@@ -2,12 +2,15 @@ package com.evolveum.polygon.connector.msgraphapi;
 
 import com.evolveum.polygon.connector.msgraphapi.integration.BasicConfigurationForTests;
 import org.identityconnectors.common.security.GuardedString;
+import org.apache.http.client.methods.HttpEntityEnclosingRequestBase;
+import org.identityconnectors.framework.common.exceptions.InvalidAttributeValueException;
 import org.identityconnectors.framework.common.objects.Attribute;
 import org.identityconnectors.framework.common.objects.AttributeBuilder;
 import org.identityconnectors.framework.common.objects.AttributeDelta;
 import org.identityconnectors.framework.common.objects.AttributeDeltaBuilder;
 import org.identityconnectors.framework.common.objects.OperationOptions;
 import org.identityconnectors.framework.common.objects.OperationOptionsBuilder;
+import org.identityconnectors.framework.common.objects.Uid;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.testng.annotations.Test;
@@ -26,6 +29,22 @@ import static org.testng.AssertJUnit.*;
  */
 @Test(groups = "unit")
 public class UserProcessingTest extends BasicConfigurationForTests {
+
+    private static class RecordingGraphEndpoint extends MockGraphEndpoint {
+        private JSONObject lastPayload;
+        private String lastPath;
+
+        RecordingGraphEndpoint(MSGraphConfiguration configuration) {
+            super(configuration);
+        }
+
+        @Override
+        public JSONObject callRequest(HttpEntityEnclosingRequestBase request, JSONObject json, Boolean parseResult) {
+            this.lastPath = request.getURI().getPath();
+            this.lastPayload = json;
+            return new JSONObject().put("invitedUser", new JSONObject().put("id", "invited-user-id"));
+        }
+    }
 
     @Test
     public void testGetAttributesToGet() throws Exception {
@@ -226,5 +245,177 @@ public class UserProcessingTest extends BasicConfigurationForTests {
         assertEquals(2, interests.length());
         assertEquals("a", interests.getString(0));
         assertEquals("b", interests.getString(1));
+    }
+
+    @Test
+    public void testCreateGuestUsesInvitationWhenUpnAndPasswordAreMissing() {
+        MSGraphConfiguration configuration = new MSGraphConfiguration();
+        configuration.setTenantId("example.com");
+        configuration.setInviteGuests(true);
+        configuration.setSendInviteMail(true);
+        configuration.setInviteRedirectUrl("https://myapps.microsoft.com");
+
+        RecordingGraphEndpoint endpoint = new RecordingGraphEndpoint(configuration);
+        UserProcessing userProcessing = new UserProcessing(endpoint, endpoint.getSchemaTranslator());
+
+        Set<Attribute> attrs = new HashSet<>();
+        attrs.add(AttributeBuilder.build("mail", "external@example.com"));
+        attrs.add(AttributeBuilder.build("displayName", "External Guest"));
+        attrs.add(AttributeBuilder.build("userType", "Guest"));
+
+        Uid uid = userProcessing.createUser(attrs);
+
+        assertEquals("invited-user-id", uid.getUidValue());
+        assertEquals("/v1.0/invitations", endpoint.lastPath);
+        assertNotNull(endpoint.lastPayload);
+        assertEquals("external@example.com", endpoint.lastPayload.getString("invitedUserEmailAddress"));
+        assertEquals("External Guest", endpoint.lastPayload.getString("invitedUserDisplayName"));
+        assertEquals("Guest", endpoint.lastPayload.getString("invitedUserType"));
+        assertTrue(endpoint.lastPayload.getBoolean("sendInvitationMessage"));
+        assertEquals("https://myapps.microsoft.com", endpoint.lastPayload.getString("inviteRedirectUrl"));
+        assertFalse(endpoint.lastPayload.has("invitedUserMessageInfo"));
+    }
+
+    @Test(expectedExceptions = InvalidAttributeValueException.class,
+            expectedExceptionsMessageRegExp = ".*userPrincipalName must not be provided.*")
+    public void testCreateGuestInvitationRejectsUserPrincipalName() {
+        MSGraphConfiguration configuration = new MSGraphConfiguration();
+        configuration.setTenantId("example.com");
+        configuration.setInviteGuests(true);
+        configuration.setInviteRedirectUrl("https://myapps.microsoft.com");
+
+        RecordingGraphEndpoint endpoint = new RecordingGraphEndpoint(configuration);
+        UserProcessing userProcessing = new UserProcessing(endpoint, endpoint.getSchemaTranslator());
+
+        Set<Attribute> attrs = new HashSet<>();
+        attrs.add(AttributeBuilder.build("mail", "external@example.com"));
+        attrs.add(AttributeBuilder.build("displayName", "External Guest"));
+        attrs.add(AttributeBuilder.build("userType", "Guest"));
+        attrs.add(AttributeBuilder.build("userPrincipalName", "external_example.com#EXT#@tenant.onmicrosoft.com"));
+
+        userProcessing.createUser(attrs);
+    }
+
+    @Test
+    public void testCreateGuestInvitationWrapsCustomMessage() {
+        MSGraphConfiguration configuration = invitationConfiguration();
+        configuration.setSendInviteMail(true);
+        configuration.setInviteMessage("Welcome to the organization.");
+
+        RecordingGraphEndpoint endpoint =
+                new RecordingGraphEndpoint(configuration);
+
+        UserProcessing userProcessing =
+                new UserProcessing(
+                        endpoint,
+                        endpoint.getSchemaTranslator());
+
+        userProcessing.createUser(guestAttributes());
+
+        JSONObject payload = endpoint.lastPayload;
+
+        assertNotNull(payload);
+        assertTrue(payload.has("invitedUserMessageInfo"));
+
+        Object messageInfoValue =
+                payload.get("invitedUserMessageInfo");
+
+        assertTrue(
+                "invitedUserMessageInfo must be a JSON object",
+                messageInfoValue instanceof JSONObject);
+
+        JSONObject messageInfo =
+                (JSONObject) messageInfoValue;
+
+        assertEquals(
+                "Welcome to the organization.",
+                messageInfo.getString(
+                        "customizedMessageBody"));
+
+        assertTrue(
+                payload.getBoolean(
+                        "sendInvitationMessage"));
+    }
+
+    @Test
+    public void testCreateGuestInvitationOmitsEmptyMessageInfo() {
+        MSGraphConfiguration configuration = invitationConfiguration();
+        configuration.setSendInviteMail(true);
+        configuration.setInviteMessage("");
+
+        RecordingGraphEndpoint endpoint =
+                new RecordingGraphEndpoint(configuration);
+
+        UserProcessing userProcessing =
+                new UserProcessing(
+                        endpoint,
+                        endpoint.getSchemaTranslator());
+
+        userProcessing.createUser(guestAttributes());
+
+        JSONObject payload = endpoint.lastPayload;
+
+        assertNotNull(payload);
+
+        assertFalse(
+                payload.has(
+                        "invitedUserMessageInfo"));
+
+        assertTrue(
+                payload.getBoolean(
+                        "sendInvitationMessage"));
+    }
+
+    @Test(expectedExceptions = InvalidAttributeValueException.class,
+            expectedExceptionsMessageRegExp = ".*Password must not be provided.*")
+    public void testCreateGuestInvitationRejectsPassword() {
+        MSGraphConfiguration configuration = new MSGraphConfiguration();
+        configuration.setTenantId("example.com");
+        configuration.setInviteGuests(true);
+        configuration.setInviteRedirectUrl("https://myapps.microsoft.com");
+
+        RecordingGraphEndpoint endpoint = new RecordingGraphEndpoint(configuration);
+        UserProcessing userProcessing = new UserProcessing(endpoint, endpoint.getSchemaTranslator());
+
+        Set<Attribute> attrs = new HashSet<>();
+        attrs.add(AttributeBuilder.build("mail", "external@example.com"));
+        attrs.add(AttributeBuilder.build("displayName", "External Guest"));
+        attrs.add(AttributeBuilder.build("userType", "Guest"));
+        attrs.add(AttributeBuilder.build(ATTR_ICF_PASSWORD, new GuardedString("DoNotUseThisPassword1".toCharArray())));
+
+        userProcessing.createUser(attrs);
+    }
+
+    private MSGraphConfiguration invitationConfiguration() {
+        MSGraphConfiguration configuration =
+                new MSGraphConfiguration();
+
+        configuration.setTenantId("example.com");
+        configuration.setInviteGuests(true);
+        configuration.setInviteRedirectUrl(
+                "https://myapplications.microsoft.com");
+
+        return configuration;
+    }
+
+    private Set<Attribute> guestAttributes() {
+        Set<Attribute> attributes = new HashSet<>();
+
+        attributes.add(
+                AttributeBuilder.build(
+                        "mail",
+                        "external@example.com"));
+
+        attributes.add(
+                AttributeBuilder.build(
+                        "displayName",
+                        "External Guest"));
+
+        attributes.add(
+                AttributeBuilder.build(
+                        "userType",
+                        "Guest"));
+
+        return attributes;
     }
 }
