@@ -1104,12 +1104,8 @@ public class UserProcessing extends ObjectProcessing {
         LOG.info("executeQueryForUser()");
         final GraphEndpoint endpoint = getGraphEndpoint();
         final String selectorSingle = getSelectorSingle(options);
-        StringBuilder directoryExtensions = new StringBuilder();
-        for (AttributeInfo extAttr : directoryExtensionSchema()) {
-            directoryExtensions.append(extAttr.getName()).append(",");
-        }
-        directoryExtensions = new StringBuilder(directoryExtensions.substring(0, directoryExtensions.length() - 1));
-        final String selectorList = selector(
+
+        List<String> attrs = new ArrayList<>(List.of(
                 ATTR_ACCOUNTENABLED, ATTR_DISPLAYNAME,
                 ATTR_ONPREMISESIMMUTABLEID, ATTR_MAILNICKNAME, ATTR_USERPRINCIPALNAME,
                 ATTR_BUSINESSPHONES, ATTR_CITY, ATTR_COMPANYNAME, ATTR_COUNTRY, ATTR_DEPARTMENT,
@@ -1122,9 +1118,13 @@ public class UserProcessing extends ObjectProcessing {
                 ATTR_STATE, ATTR_STREETADDRESS, ATTR_SURNAME,
                 ATTR_USAGELOCATION, ATTR_USERTYPE, ATTR_ASSIGNEDLICENSES,
                 ATTR_EXTERNALUSERSTATE, ATTR_EXTERNALUSERSTATECHANGEDATETIME, ATTR_MANAGER,
-                ATTR_ONPREMISESEXTENSIONATTRIBUTES, ATTR_EMPLOYEE_ID, directoryExtensions.toString()
-        );
+                ATTR_ONPREMISESEXTENSIONATTRIBUTES, ATTR_EMPLOYEE_ID
+        ));
 
+        for (AttributeInfo extAttr : directoryExtensionSchema()) {
+            attrs.add(extAttr.getName());
+        }
+        final String selectorList = selector(attrs.toArray(new String[0]));
         String query = null;
         Boolean fetchAll = false;
 
