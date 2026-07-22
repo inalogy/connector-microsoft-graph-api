@@ -51,6 +51,10 @@ public class MSGraphConfiguration extends AbstractConfiguration
     private boolean ignorePersonalSites = true;
     private String expectedPropertyNames = "Name,Title,TitleLink";
 
+    // Directory Extensions
+    private String[] userDirectoryExtensions;
+    private String[] groupDirectoryExtensions;
+
     @ConfigurationProperty(order = 10, displayMessageKey = "ClientId.display", helpMessageKey = "ClientId.help", required = true)
 
     public String getClientId() {
@@ -277,6 +281,22 @@ public class MSGraphConfiguration extends AbstractConfiguration
     public void setDiscoverSchema(boolean discoverSchema) {
         this.discoverSchema = discoverSchema;
     }
+
+    @ConfigurationProperty(order = 210,
+            displayMessageKey = "UserDirectoryExtensions.display",
+            helpMessageKey = "DirectoryExtensions.help"
+    )
+    public String[] getUserDirectoryExtensions() {return userDirectoryExtensions;}
+
+    public void setUserDirectoryExtensions(String[] userDirectoryExtensions) {this.userDirectoryExtensions = userDirectoryExtensions;}
+
+    @ConfigurationProperty(order = 220,
+            displayMessageKey = "GroupDirectoryExtensions.display",
+            helpMessageKey = "DirectoryExtensions.help"
+    )
+    public String[] getGroupDirectoryExtensions() {return groupDirectoryExtensions;}
+
+    public void setGroupDirectoryExtensions(String[] groupDirectoryExtensions) {this.groupDirectoryExtensions = groupDirectoryExtensions;}
 
     @Override
     public void validate() {

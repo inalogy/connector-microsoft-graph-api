@@ -12,6 +12,7 @@ import org.identityconnectors.framework.common.objects.*;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.lang.reflect.Type;
 import java.net.URI;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -161,8 +162,9 @@ public class UserProcessing extends ObjectProcessing {
 
     // extend
     private static final String ATTR_ONPREMISESEXTENSIONATTRIBUTES = "onPremisesExtensionAttributes";
-    private  static final String EXTENSION_ATTRIBUTE = "extensionAttribute";
+    private static final String EXTENSION_ATTRIBUTE = "extensionAttribute";
     private static final int NUMBER_OF_EXTENSIONS = 15;
+
     // technical constants
     private static final String TYPE = "@odata.type";
     private static final String TYPE_GROUP = "#microsoft.graph.group";
@@ -424,6 +426,11 @@ public class UserProcessing extends ObjectProcessing {
             AttributeInfoBuilder attrExtensionAttribute = new AttributeInfoBuilder(attributeName);
             attrExtensionAttribute.setRequired(false).setType(String.class).setCreateable(true).setUpdateable(true).setReadable(true).setMultiValued(false).setReturnedByDefault(false);
             userObjClassBuilder.addAttributeInfo(attrExtensionAttribute.build());
+        }
+
+        // directory extensions
+        for (AttributeInfo extAttr : directoryExtensionSchema()) {
+            userObjClassBuilder.addAttributeInfo(extAttr);
         }
 
         //get or update
@@ -690,6 +697,85 @@ public class UserProcessing extends ObjectProcessing {
         return json;
     }
 
+    private List<AttributeInfo> directoryExtensionSchema() {
+        List<AttributeInfo> dirExtSchema = new ArrayList<>();
+        if (getConfiguration().getUserDirectoryExtensions() == null) {
+            return dirExtSchema;
+        }
+        for (String ext : getConfiguration().getUserDirectoryExtensions()) {
+            String[] split = ext.split(";");
+            LOG.ok("Adding directory extension {0}", ext);
+            if (split.length != 4) {
+                LOG.error("Invalid directory extension definition: {0}. Skipping.", ext);
+                continue;
+            }
+            String name = split[0];
+            String type = split[1];
+            boolean multivalue = false;
+            boolean required = false;
+            if (split[2].toLowerCase().equals("true")) {
+                multivalue = true;
+            }
+            if (split[3].toLowerCase().equals("true")) {
+                required = true;
+            }
+            if (!name.startsWith("extension_")) {
+                LOG.ok("extension prefix not found in name adding it to {0}", name);
+                name = "extension_" + name;
+            }
+            switch (type.toLowerCase()) {
+                case "string":
+                    LOG.info("Adding string extension {0},{1},{2}", name,
+                            multivalue ? "multivalued" : "single-value",
+                            required ? "required" : "not required");
+                    dirExtSchema.add(new AttributeInfoBuilder(name)
+                            .setType(String.class).setMultiValued(multivalue).setRequired(required).build());
+                    break;
+                case "boolean":
+                    LOG.info("Adding boolean extension {0},{1},{2}", name,
+                            multivalue ? "multivalued" : "single-value",
+                            required ? "required" : "not required");
+                    dirExtSchema.add(new AttributeInfoBuilder(name)
+                            .setType(Boolean.class).setMultiValued(false).setRequired(required).build());
+                    break;
+                case "integer":
+                    LOG.info("Adding integer extension {0},{1},{2}", name,
+                            multivalue ? "multivalued" : "single-value",
+                            required ? "required" : "not required");
+                    dirExtSchema.add(new AttributeInfoBuilder(name)
+                            .setType(Integer.class).setMultiValued(false).setRequired(required).build());
+                    break;
+                case "binary":
+                    LOG.info("Adding binary extension {0},{1},{2}", name,
+                            multivalue ? "multivalued" : "single-value",
+                            required ? "required" : "not required");
+                    dirExtSchema.add(new AttributeInfoBuilder(name)
+                            .setType(byte[].class).setMultiValued(multivalue).setRequired(required).build());
+                    break;
+                case "datetime":
+                    // also to be handled as string
+                    LOG.info("Adding datetime extension, processed as string {0},{1},{2}", name,
+                            multivalue ? "multivalued" : "single-value",
+                            required ? "required" : "not required");
+                    dirExtSchema.add(new AttributeInfoBuilder(name)
+                            .setType(String.class).setMultiValued(multivalue).setRequired(required).build());
+                    break;
+                case "reference":
+                    LOG.info("Adding reference extension, processed as string {0},{1},{2}", name,
+                            multivalue ? "multivalued" : "single-value",
+                            required ? "required" : "not required");
+                    // also to be handled as string, possible association can be done in midpoint
+                    dirExtSchema.add(new AttributeInfoBuilder(name)
+                            .setType(String.class).setMultiValued(multivalue).setRequired(required).build());
+                    break;
+                default:
+                    LOG.error("Invalid extension attribute type: {0}.", type);
+                    throw new InvalidAttributeValueException("Invalid extension attribute type: " + type);
+            }
+        }
+        return dirExtSchema;
+    }
+
     private String[] parseDisabledPlans(String[] disabledPlans) {
         LOG.ok("Parsing disabled plans");
         List<String> list = new ArrayList<String>();
@@ -824,6 +910,12 @@ public class UserProcessing extends ObjectProcessing {
                 oldSelectors.add(delta.getName());
                 continue;
             }
+            if (delta.getName().startsWith("extension_")) {
+                if (delta.getValuesToRemove() != null || delta.getValuesToAdd() != null) {
+                    oldSelectors.add(delta.getName());
+                    continue;
+                }
+            }
             switch (delta.getName()) {
                 case ATTR_ASSIGNEDLICENSES_SKUID:
                     assignedLicensesDelta = delta;
@@ -847,7 +939,7 @@ public class UserProcessing extends ObjectProcessing {
 
             // Remove unrelated keys
             for (String key : oldJson.keySet()) {
-                if (!UPDATABLE_MULTIPLE_VALUE_ATTRS_OF_USER.contains(key)) {
+                if (!UPDATABLE_MULTIPLE_VALUE_ATTRS_OF_USER.contains(key) && !key.startsWith("extension_")) {
                     oldJson.remove(key);
                 }
             }
@@ -1012,7 +1104,11 @@ public class UserProcessing extends ObjectProcessing {
         LOG.info("executeQueryForUser()");
         final GraphEndpoint endpoint = getGraphEndpoint();
         final String selectorSingle = getSelectorSingle(options);
-
+        StringBuilder directoryExtensions = new StringBuilder();
+        for (AttributeInfo extAttr : directoryExtensionSchema()) {
+            directoryExtensions.append(extAttr.getName()).append(",");
+        }
+        directoryExtensions = new StringBuilder(directoryExtensions.substring(0, directoryExtensions.length() - 1));
         final String selectorList = selector(
                 ATTR_ACCOUNTENABLED, ATTR_DISPLAYNAME,
                 ATTR_ONPREMISESIMMUTABLEID, ATTR_MAILNICKNAME, ATTR_USERPRINCIPALNAME,
@@ -1026,7 +1122,7 @@ public class UserProcessing extends ObjectProcessing {
                 ATTR_STATE, ATTR_STREETADDRESS, ATTR_SURNAME,
                 ATTR_USAGELOCATION, ATTR_USERTYPE, ATTR_ASSIGNEDLICENSES,
                 ATTR_EXTERNALUSERSTATE, ATTR_EXTERNALUSERSTATECHANGEDATETIME, ATTR_MANAGER,
-                ATTR_ONPREMISESEXTENSIONATTRIBUTES, ATTR_EMPLOYEE_ID
+                ATTR_ONPREMISESEXTENSIONATTRIBUTES, ATTR_EMPLOYEE_ID, directoryExtensions.toString()
         );
 
         String query = null;
@@ -1189,7 +1285,7 @@ public class UserProcessing extends ObjectProcessing {
     }
 
     public ConnectorObjectBuilder evaluateAndFetchAttributesToGet(Uid uid,
-                                                                  OperationOptions oo){
+                                                                  OperationOptions oo) {
 
         Set<String> attributesToGet = getAttributesToGet(oo);
         String query = uid.getUidValue();
@@ -1205,10 +1301,10 @@ public class UserProcessing extends ObjectProcessing {
             filter = "$" + EXPAND + "=" + ATTR_MANAGER;
         }
 
-        JSONObject user = endpoint.executeGetRequest(toGetURLByUserPrincipalName(query)+"/",
+        JSONObject user = endpoint.executeGetRequest(toGetURLByUserPrincipalName(query) + "/",
                 selectorSingle + "&" + filter, oo);
 
-        return  convertUserJSONObjectToConnectorObject(user);
+        return convertUserJSONObjectToConnectorObject(user);
     }
 
 
@@ -1338,6 +1434,14 @@ public class UserProcessing extends ObjectProcessing {
         getIfExists(user, ATTR_EMPLOYEE_ID, String.class, builder);
         getIfExists(user, ATTR_USERPHOTO, byte[].class, builder);
 
+        for (AttributeInfo extAttr : directoryExtensionSchema()) {
+            if (extAttr.isMultiValued()) {
+                getMultiIfExists(user, extAttr.getName(), builder);
+            } else {
+                getIfExists(user, extAttr.getName(), extAttr.getType(), builder);
+            }
+        }
+
         for (int i = 1; i <= NUMBER_OF_EXTENSIONS; i++) {
             getFromItemIfExists(user, ATTR_ONPREMISESEXTENSIONATTRIBUTES, EXTENSION_ATTRIBUTE + i, String.class, builder);
         }
@@ -1369,10 +1473,17 @@ public class UserProcessing extends ObjectProcessing {
     }
 
     public String getSelectorSingle(OperationOptions options) {
-
+        StringBuilder directoryExtensions = new StringBuilder();
+        for (AttributeInfo extAttr : directoryExtensionSchema()) {
+            directoryExtensions.append(extAttr.getName()).append(",");
+        }
+        if (directoryExtensions.length() > 0) {
+            directoryExtensions = new StringBuilder(directoryExtensions.substring(0, directoryExtensions.length() - 1));
+        } else {
+            directoryExtensions = new StringBuilder();
+        }
         if (options != null) {
-
-            return selector(getSchemaTranslator().filter(ObjectClass.ACCOUNT_NAME, options,
+            List<String> attrs = new ArrayList<>(List.of(
                     ATTR_ACCOUNTENABLED, ATTR_DISPLAYNAME,
                     ATTR_ONPREMISESIMMUTABLEID, ATTR_MAILNICKNAME, ATTR_USERPRINCIPALNAME, ATTR_ABOUTME,
                     ATTR_BIRTHDAY, ATTR_BUSINESSPHONES, ATTR_CITY, ATTR_COMPANYNAME, ATTR_COUNTRY, ATTR_DEPARTMENT,
@@ -1387,6 +1498,12 @@ public class UserProcessing extends ObjectProcessing {
                     ATTR_EXTERNALUSERSTATE, ATTR_EXTERNALUSERSTATECHANGEDATETIME, ATTR_MANAGER,
                     ATTR_EMPLOYEE_HIRE_DATE, ATTR_EMPLOYEE_LEAVE_DATE_TIME, ATTR_EMPLOYEE_TYPE,
                     ATTR_FAX_NUMBER, ATTR_EMPLOYEE_ID, ATTR_ONPREMISESEXTENSIONATTRIBUTES
+            ));
+            for (AttributeInfo extAttr : directoryExtensionSchema()) {
+                attrs.add(extAttr.getName());
+            }
+            return selector(getSchemaTranslator().filter(ObjectClass.ACCOUNT_NAME, options,
+                    attrs.toArray(new String[0])
             ));
         } else {
 
@@ -1403,7 +1520,7 @@ public class UserProcessing extends ObjectProcessing {
                     ATTR_USAGELOCATION, ATTR_USERTYPE, ATTR_ASSIGNEDLICENSES,
                     ATTR_EXTERNALUSERSTATE, ATTR_EXTERNALUSERSTATECHANGEDATETIME, ATTR_MANAGER,
                     ATTR_EMPLOYEE_HIRE_DATE, ATTR_EMPLOYEE_LEAVE_DATE_TIME, ATTR_EMPLOYEE_TYPE,
-                    ATTR_FAX_NUMBER, ATTR_EMPLOYEE_ID, ATTR_ONPREMISESEXTENSIONATTRIBUTES
+                    ATTR_FAX_NUMBER, ATTR_EMPLOYEE_ID, ATTR_ONPREMISESEXTENSIONATTRIBUTES, directoryExtensions.toString()
             );
         }
 
@@ -1438,6 +1555,7 @@ public class UserProcessing extends ObjectProcessing {
 
     public Set<String> getObjectDeltaItems() {
 
-        return new HashSet<>(Arrays.asList(ATTR_MANAGER+O_DELTA));
+        return new HashSet<>(Arrays.asList(ATTR_MANAGER + O_DELTA));
     }
+
 }
