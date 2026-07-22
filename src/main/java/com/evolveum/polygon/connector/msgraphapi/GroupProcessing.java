@@ -22,6 +22,7 @@ public class GroupProcessing extends ObjectProcessing {
 
     private final static String GROUPS = "/groups";
     private final static String USERS = "/users";
+    private final static String ROLE_ASSIGNMENT = "/roleManagement/directory/roleAssignments";
 
     private static final String ATTR_ALLOWEXTERNALSENDERS = "allowExternalSenders";
     private static final String ATTR_AUTOSUBSCRIBENEWMEMBERS = "autoSubscribeNewMembers";
@@ -47,10 +48,13 @@ public class GroupProcessing extends ObjectProcessing {
     private static final String ATTR_ISASSIGNABLETOROLE = "isAssignableToRole";
     private static final String ATTR_MEMBERS = "members";
     private static final String ATTR_OWNERS = "owners";
+    private static final String ATTR_MEMBER_OF_ROLE = "memberOfRole";
+
 
     protected static final Set<String> EXCLUDE_ATTRS_OF_GROUP = Stream.of(
             ATTR_MEMBERS,
-            ATTR_OWNERS
+            ATTR_OWNERS,
+            ATTR_MEMBER_OF_ROLE
     ).collect(Collectors.toSet());
 
     protected static final Set<String> UPDATABLE_MULTIPLE_VALUE_ATTRS_OF_GROUP = Stream.of(
@@ -196,6 +200,12 @@ public class GroupProcessing extends ObjectProcessing {
         for (AttributeInfo extAttr : directoryExtensionSchema()) {
             groupObjClassBuilder.addAttributeInfo(extAttr);
         }
+
+        AttributeInfoBuilder attrRoleMembers = new AttributeInfoBuilder(ATTR_MEMBER_OF_ROLE);
+        attrRoleMembers.setRequired(false).setType(String.class).setMultiValued(true)
+                .setCreateable(false).setUpdateable(false).setReadable(true)
+                .setReturnedByDefault(false);
+        groupObjClassBuilder.addAttributeInfo(attrRoleMembers.build());
 
         return groupObjClassBuilder.build();
     }
@@ -679,6 +689,24 @@ public class GroupProcessing extends ObjectProcessing {
     }
 
     /**
+     * Query a group's roles, add them to the group's JSON attributes (multivalue)
+     *
+     * @param group Group to query for (JSON object resulting from previous API call)
+     * @return Original JSON, enriched with roles information
+     */
+    private JSONObject saturateGroupRoleMembership(JSONObject group) {
+        final GraphEndpoint endpoint = getGraphEndpoint();
+        final String uid = group.getString(ATTR_ID);
+
+        LOG.info("[GET] - saturateRoleMembership(), for group with UID: {0}", uid);
+
+        final String customQuery = "$expand=roleDefinition&$select=roleDefinitionId&$filter=principalId eq '" + uid + "'";
+        final JSONArray groupMembership = endpoint.executeListRequest(ROLE_ASSIGNMENT, customQuery, null, true);
+        group.put(ATTR_MEMBER_OF_ROLE, getJSONArray(groupMembership, "roleDefinitionId"));
+        return group;
+    }
+
+    /**
      * Adds group accounts to the group JSON Object. Decides upon members or owners based on @param isMembers.
      *
      * @param group     Original group object to extend with owners or members account ids
@@ -718,10 +746,15 @@ public class GroupProcessing extends ObjectProcessing {
             group = saturateGroupOwnership(group);
         }
 
+        if (shouldSaturate(options, ObjectClass.GROUP_NAME, ATTR_MEMBER_OF_ROLE)) {
+            group = saturateGroupRoleMembership(group);
+        }
+
         ConnectorObjectBuilder builder = convertGroupJSONObjectToConnectorObject(group);
 
         incompleteIfNecessary(options, ObjectClass.GROUP_NAME, ATTR_MEMBERS, builder);
         incompleteIfNecessary(options, ObjectClass.GROUP_NAME, ATTR_OWNERS, builder);
+        incompleteIfNecessary(options, ObjectClass.GROUP_NAME, ATTR_MEMBER_OF_ROLE, builder);
 
         final ConnectorObject connectorObject = builder.build();
         LOG.ok("handleJSONObject, group: {0}, \n\tconnectorObject: {1}", group.get("id"), connectorObject);
@@ -761,6 +794,8 @@ public class GroupProcessing extends ObjectProcessing {
 
         getMultiIfExists(group, ATTR_MEMBERS, builder);
         getMultiIfExists(group, ATTR_OWNERS, builder);
+        getMultiIfExists(group, ATTR_MEMBER_OF_ROLE, builder);
+
         for (AttributeInfo extAttr : directoryExtensionSchema()) {
             if (extAttr.isMultiValued()) {
                 getMultiIfExists(group, extAttr.getName(), builder);
