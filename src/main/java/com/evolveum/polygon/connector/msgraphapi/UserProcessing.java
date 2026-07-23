@@ -1502,9 +1502,24 @@ public class UserProcessing extends ObjectProcessing {
             for (AttributeInfo extAttr : directoryExtensionSchema()) {
                 attrs.add(extAttr.getName());
             }
-            return selector(getSchemaTranslator().filter(ObjectClass.ACCOUNT_NAME, options,
-                    attrs.toArray(new String[0])
-            ));
+            String[] filtered = getSchemaTranslator().filter(ObjectClass.ACCOUNT_NAME, options,
+                    attrs.toArray(new String[0]));
+
+            // Exclude SPO attributes unless they were explicitly requested via attributesToGet.
+            // SPO attributes (aboutMe, mySite, birthday, etc.) require a SharePoint Online license;
+            // including them in $select causes HTTP 400 on tenants without SPO.
+            // When SchemaTranslator.filter() falls back to returning all candidates (because
+            // attributesToGet is empty), SPO attributes leak into $select unintentionally.
+            String[] explicitAttrs = options.getAttributesToGet();
+            Set<String> explicitlyRequested = explicitAttrs != null
+                    ? new HashSet<>(Arrays.asList(explicitAttrs))
+                    : Collections.emptySet();
+
+            filtered = Arrays.stream(filtered)
+                    .filter(attr -> !SPO_ATTRS.contains(attr) || explicitlyRequested.contains(attr))
+                    .toArray(String[]::new);
+
+            return selector(filtered);
         } else {
 
             return selector(
