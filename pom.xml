@@ -23,7 +23,7 @@
     <parent>
         <artifactId>connector-parent</artifactId>
         <groupId>com.evolveum.polygon</groupId>
-        <version>1.5.1.3</version>
+        <version>1.5.2.0</version>
         <relativePath></relativePath>
     </parent>
 
@@ -35,9 +35,11 @@
     <name>connector-microsoft-graph-api</name>
 
     <properties>
+        <groups>unit</groups>
         <connectorPackage>com.evolveum.polygon</connectorPackage>
         <connectorClass>MSGraphConnectorConnector</connectorClass>
         <!--  <slf4jVersion>1.6.1</slf4jVersion>-->
+        <surefire.version>3.2.5</surefire.version>
     </properties>
 
     <repositories>
@@ -59,8 +61,7 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
                 <configuration>
-                    <source>9</source>
-                    <target>9</target>
+                    <release>17</release>
                 </configuration>
             </plugin>
             <plugin>
@@ -75,12 +76,19 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
-                    <groups>unit</groups>
+                    <groups>${groups}</groups>
                     <excludes>
                         <exclude>**/UserPerformanceTest.java</exclude>
                         <exclude>**/GroupPerformanceTests.java</exclude>
                     </excludes>
                 </configuration>
+                <dependencies>
+                    <dependency>
+                        <groupId>org.apache.maven.surefire</groupId>
+                        <artifactId>surefire-testng</artifactId>
+                        <version>${surefire.version}</version>
+                    </dependency>
+                </dependencies>
             </plugin>
         </plugins>
     </build>
@@ -98,23 +106,23 @@
         <dependency>
             <groupId>org.json</groupId>
             <artifactId>json</artifactId>
-            <version>20231013</version>
+            <version>20250517</version>
         </dependency>
         <dependency>
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-simple</artifactId>
-            <version>1.6.4</version>
+            <version>1.7.36</version>
         </dependency>
         <dependency>
             <groupId>commons-codec</groupId>
             <artifactId>commons-codec</artifactId>
-            <version>1.15</version> <!-- non-vulnerable -->
+            <version>1.18.0</version> <!-- non-vulnerable -->
         </dependency>
 
         <dependency>
             <groupId>commons-io</groupId>
             <artifactId>commons-io</artifactId>
-            <version>2.14.0</version>
+            <version>2.18.0</version>
             <scope>test</scope>
         </dependency>
     </dependencies>
@@ -134,12 +142,12 @@
             <dependency>
                 <groupId>net.minidev</groupId>
                 <artifactId>json-smart</artifactId>
-                <version>2.4.10</version>
+                <version>2.5.2</version>
             </dependency>
             <dependency>
                 <groupId>com.google.code.gson</groupId>
                 <artifactId>gson</artifactId>
-                <version>2.10.1</version>
+                <version>2.13.1</version>
             </dependency>
             <dependency>
                 <groupId>org.apache.commons</groupId>
@@ -149,7 +157,7 @@
             <dependency>
                 <groupId>org.yaml</groupId>
                 <artifactId>snakeyaml</artifactId>
-                <version>2.2</version>
+                <version>2.4</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

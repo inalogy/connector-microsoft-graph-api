@@ -44,6 +44,7 @@ This are permissions which you need to add to your Entra ID (former Azure Active
 * GroupMember.ReadWrite.All
 * PrivilegedAccess.Read.AzureADGroup
 * PrivilegedAccess.ReadWrite.AzureADGroup
+* User.Invite.All
 * User.Read.All
 * User.ReadWrite.All
 #### Optional: Role Membership Management

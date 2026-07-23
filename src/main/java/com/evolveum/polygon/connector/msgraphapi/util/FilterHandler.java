@@ -115,54 +115,54 @@ public class FilterHandler implements FilterVisitor<ResourceQuery, ResourceQuery
             CategorizedFilter categorizedFilter = snippets.get(snipp);
             Boolean isSearch = categorizedFilter.getIsSearch();
             Filter filter = categorizedFilter.getFilter();
-                         if (filter instanceof CompositeFilter || filter instanceof ContainsAllValuesFilter) {
+            if (filter instanceof CompositeFilter || filter instanceof ContainsAllValuesFilter) {
 
-                         } else if ( filter instanceof NotFilter && snipp.isEmpty()){
+            } else if ( filter instanceof NotFilter && snipp.isEmpty()){
 
-                         } else {
+            } else {
 
-                             if(filter instanceof NotFilter){
-                                 isSearch = checkIfFilterOrChildHasSearch(categorizedFilter.getFilter());
-                             }
+                if(filter instanceof NotFilter){
+                    isSearch = checkIfFilterOrChildHasSearch(categorizedFilter.getFilter());
+                }
 
-                             if (isSearch) {
+                if (isSearch) {
 
-                                 String previousSearchSnippet = p.getSearchExpression();
-                                 if(previousSearchSnippet!=null && !previousSearchSnippet.isEmpty()){
+                    String previousSearchSnippet = p.getSearchExpression();
+                    if(previousSearchSnippet!=null && !previousSearchSnippet.isEmpty()){
 
-                                     StringBuilder sb = new StringBuilder();
-                                     sb.append(wrapValue(snipp, _L_PAR, _R_PAR));
-                                     sb.append(_PADDING);
-                                     sb.append(AND_S_OP);
-                                     sb.append(_PADDING);
-                                     sb.append(wrapValue(previousSearchSnippet, _L_PAR, _R_PAR));
+                        StringBuilder sb = new StringBuilder();
+                        sb.append(wrapValue(snipp, _L_PAR, _R_PAR));
+                        sb.append(_PADDING);
+                        sb.append(AND_S_OP);
+                        sb.append(_PADDING);
+                        sb.append(wrapValue(previousSearchSnippet, _L_PAR, _R_PAR));
 
-                                     p.setSearchExpression(sb.toString());
-                                 } else {
+                        p.setSearchExpression(sb.toString());
+                    } else {
 
-                                     p.setSearchExpression(snipp);
-                                 }
+                        p.setSearchExpression(snipp);
+                    }
 
-                             } else {
+                } else {
 
-                                 String previousFilterSnippet = p.getFilterExpression();
-                                 if(previousFilterSnippet!=null && !previousFilterSnippet.isEmpty()){
+                    String previousFilterSnippet = p.getFilterExpression();
+                    if(previousFilterSnippet!=null && !previousFilterSnippet.isEmpty()){
 
-                                     StringBuilder sb = new StringBuilder();
-                                     sb.append(wrapValue(snipp, _L_PAR, _R_PAR));
-                                     sb.append(_PADDING);
-                                     sb.append(AND_OP);
-                                     sb.append(_PADDING);
-                                     sb.append(wrapValue(previousFilterSnippet, _L_PAR, _R_PAR));
+                        StringBuilder sb = new StringBuilder();
+                        sb.append(wrapValue(snipp, _L_PAR, _R_PAR));
+                        sb.append(_PADDING);
+                        sb.append(AND_OP);
+                        sb.append(_PADDING);
+                        sb.append(wrapValue(previousFilterSnippet, _L_PAR, _R_PAR));
 
-                                     p.setFilterExpression(sb.toString());
+                        p.setFilterExpression(sb.toString());
 
-                                 } else {
+                    } else {
 
-                                     p.setFilterExpression(snipp);
-                                 }
-                             }
-                         }
+                        p.setFilterExpression(snipp);
+                    }
+                }
+            }
         }
 
         if (wasFirst) {
@@ -258,9 +258,9 @@ public class FilterHandler implements FilterVisitor<ResourceQuery, ResourceQuery
 
         LOG.ok("Generated query snippet: {0}", snippet);
 
-           p.setIdOrMembershipExpression(snippet);
-           p.setUseCount(true);
-            return p;
+        p.setIdOrMembershipExpression(snippet);
+        p.setUseCount(true);
+        return p;
 
     }
 
@@ -275,6 +275,11 @@ public class FilterHandler implements FilterVisitor<ResourceQuery, ResourceQuery
         }
 
         Attribute attr = equalsFilter.getAttribute();
+
+        if (isNullFilterValue(attr)) {
+            // Microsoft Graph null equality requires advanced query parameters for directory objects.
+            p.setUseCount(true);
+        }
 
         String snippet = processStringFilter(attr, EQUALS_OP, p);
 
@@ -295,7 +300,7 @@ public class FilterHandler implements FilterVisitor<ResourceQuery, ResourceQuery
     @Override
     public ResourceQuery visitExtendedFilter(ResourceQuery p, Filter filter) {
 
-       throw new ConnectorException("Filter 'EXTENDED FILTER' not implemented by the connector");
+        throw new ConnectorException("Filter 'EXTENDED FILTER' not implemented by the connector");
     }
 
     @Override
@@ -484,7 +489,7 @@ public class FilterHandler implements FilterVisitor<ResourceQuery, ResourceQuery
             LOG.warn("Invalid filter state, potentially malformed query snippet: {0}", query);
         }
 
-          if (wasFirst) {
+        if (wasFirst) {
 
             p.setFilterExpression(query.toString());
 
@@ -511,13 +516,13 @@ public class FilterHandler implements FilterVisitor<ResourceQuery, ResourceQuery
 
         Boolean isSearch = checkIfFilterOrChildHasSearch(orFilter);
 
-       if(checkIfFilterOrChildHasOtherThanSearch(orFilter) && isSearch){
+        if(checkIfFilterOrChildHasOtherThanSearch(orFilter) && isSearch){
 
 
-           new ConnectorException("Invalid filter combination, conjunction of other filters with contains queries " +
-                   "supported only with contains filter as a left or right side of the first 'AND' filter clause. " +
-                   "Please see documentation");
-       }
+            new ConnectorException("Invalid filter combination, conjunction of other filters with contains queries " +
+                    "supported only with contains filter as a left or right side of the first 'AND' filter clause. " +
+                    "Please see documentation");
+        }
 
         Boolean wasFirst = !afterFirtsOperation;
 
@@ -552,43 +557,43 @@ public class FilterHandler implements FilterVisitor<ResourceQuery, ResourceQuery
                     isSearch = checkIfFilterOrChildHasSearch(filter.getFilter());
                 }
 
-                    if (isSearch) {
-                        String previousSearchSnippet = p.getSearchExpression();
+                if (isSearch) {
+                    String previousSearchSnippet = p.getSearchExpression();
 
-                        if(previousSearchSnippet!=null && !previousSearchSnippet.isEmpty()){
+                    if(previousSearchSnippet!=null && !previousSearchSnippet.isEmpty()){
 
 
-                            StringBuilder sb = new StringBuilder();
+                        StringBuilder sb = new StringBuilder();
 
-                            sb.append(wrapValue(snipp, _L_PAR, _R_PAR));
-                            sb.append(_PADDING);
-                            sb.append(OR_S_OP);
-                            sb.append(_PADDING);
-                            sb.append(wrapValue(previousSearchSnippet, _L_PAR, _R_PAR));
+                        sb.append(wrapValue(snipp, _L_PAR, _R_PAR));
+                        sb.append(_PADDING);
+                        sb.append(OR_S_OP);
+                        sb.append(_PADDING);
+                        sb.append(wrapValue(previousSearchSnippet, _L_PAR, _R_PAR));
 
-                            p.setSearchExpression(sb.toString());
-                        } else {
-                            p.setSearchExpression(snipp);
-                        }
+                        p.setSearchExpression(sb.toString());
+                    } else {
+                        p.setSearchExpression(snipp);
+                    }
 
+                } else {
+
+                    String previousFilterSnippet = p.getFilterExpression();
+                    if(previousFilterSnippet!=null && !previousFilterSnippet.isEmpty()) {
+
+                        StringBuilder sb = new StringBuilder();
+                        sb.append(wrapValue(snipp, _L_PAR, _R_PAR));
+                        sb.append(_PADDING);
+                        sb.append(OR_OP);
+                        sb.append(_PADDING);
+                        sb.append(wrapValue(previousFilterSnippet, _L_PAR, _R_PAR));
+
+                        p.setFilterExpression(sb.toString());
                     } else {
 
-                        String previousFilterSnippet = p.getFilterExpression();
-                        if(previousFilterSnippet!=null && !previousFilterSnippet.isEmpty()) {
-
-                            StringBuilder sb = new StringBuilder();
-                            sb.append(wrapValue(snipp, _L_PAR, _R_PAR));
-                            sb.append(_PADDING);
-                            sb.append(OR_OP);
-                            sb.append(_PADDING);
-                            sb.append(wrapValue(previousFilterSnippet, _L_PAR, _R_PAR));
-
-                            p.setFilterExpression(sb.toString());
-                        } else {
-
-                            p.setFilterExpression(snipp);
-                        }
+                        p.setFilterExpression(snipp);
                     }
+                }
             }
         }
 
@@ -703,7 +708,7 @@ public class FilterHandler implements FilterVisitor<ResourceQuery, ResourceQuery
         List<String> nonWrapped = CollectionUtil.newList(GREATER_OR_EQUALS_OP, GREATER_OP, LESS_OP, LESS_OR_EQ_OP);
 
         if (attr != null) {
-            String singleValue = null;
+            Object singleValue = null;
             String name = attr.getName();
             List value = attr.getValue();
 
@@ -719,7 +724,7 @@ public class FilterHandler implements FilterVisitor<ResourceQuery, ResourceQuery
 
             if (value != null && !value.isEmpty()) {
 
-                singleValue = AttributeUtil.getSingleValue(attr).toString();
+                singleValue = AttributeUtil.getSingleValue(attr);
 
             } else {
 
@@ -731,14 +736,101 @@ public class FilterHandler implements FilterVisitor<ResourceQuery, ResourceQuery
             query.append(_PADDING);
             if (!nonWrapped.contains(operator)) {
 
-                query.append(wrapValue(singleValue));
+                query.append(renderODataLiteral(name, singleValue));
             } else {
 
-                query.append(singleValue);
+                query.append(renderNonWrappedLiteral(singleValue));
             }
         }
 
         return query.toString();
+    }
+
+    private String renderNonWrappedLiteral(Object value) {
+        if (value == null) {
+            return "null";
+        }
+
+        return value.toString();
+    }
+
+    private String renderODataLiteral(String attributeName, Object value) {
+        if (value == null) {
+            return "null";
+        }
+
+        if (value instanceof Boolean) {
+            return value.toString().toLowerCase(Locale.ROOT);
+        }
+
+        if (value instanceof Number) {
+            return value.toString();
+        }
+
+        String stringValue = value.toString();
+
+        if (isBooleanAttribute(attributeName) && isBooleanLiteral(stringValue)) {
+            return stringValue.toLowerCase(Locale.ROOT);
+        }
+
+        if (isNullLiteralAttribute(attributeName) && isNullLiteral(stringValue)) {
+            return "null";
+        }
+
+        return wrapValue(stringValue);
+    }
+
+    private boolean isNullFilterValue(Attribute attr) {
+        if (attr == null) {
+            return false;
+        }
+
+        List value = attr.getValue();
+        if (value == null || value.isEmpty()) {
+            return true;
+        }
+
+        Object singleValue = AttributeUtil.getSingleValue(attr);
+        if (singleValue == null) {
+            return true;
+        }
+
+        return isNullLiteralAttribute(attr.getName()) && isNullLiteral(singleValue.toString());
+    }
+
+    private boolean isBooleanLiteral(String value) {
+        return "true".equalsIgnoreCase(value) || "false".equalsIgnoreCase(value);
+    }
+
+    private boolean isNullLiteral(String value) {
+        return "null".equalsIgnoreCase(value);
+    }
+
+    private boolean isBooleanAttribute(String attributeName) {
+        if (attributeName == null) {
+            return false;
+        }
+
+        return "accountEnabled".equals(attributeName)
+                || "onPremisesSyncEnabled".equals(attributeName)
+                || "mailEnabled".equals(attributeName)
+                || "securityEnabled".equals(attributeName)
+                || "isAssignableToRole".equals(attributeName);
+    }
+
+    private boolean isNullLiteralAttribute(String attributeName) {
+        if (attributeName == null) {
+            return false;
+        }
+
+        return "onPremisesSyncEnabled".equals(attributeName)
+                || "onPremisesImmutableId".equals(attributeName)
+                || "onPremisesLastSyncDateTime".equals(attributeName)
+                || "employeeHireDate".equals(attributeName)
+                || "employeeLeaveDateTime".equals(attributeName)
+                || "manager".equals(attributeName)
+                || "mobilePhone".equals(attributeName)
+                || "officeLocation".equals(attributeName);
     }
 
     private String processStringFunction(Attribute attr, String operator, ResourceQuery resourceQuery) {
@@ -762,7 +854,10 @@ public class FilterHandler implements FilterVisitor<ResourceQuery, ResourceQuery
 
             if (value != null && !value.isEmpty()) {
 
-                singleValue = AttributeUtil.getSingleValue(attr).toString();
+                Object valueObject = AttributeUtil.getSingleValue(attr);
+                if (valueObject != null) {
+                    singleValue = valueObject.toString();
+                }
 
             } else {
 
