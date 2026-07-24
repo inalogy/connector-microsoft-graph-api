@@ -29,6 +29,60 @@ keytool -keystore keystore.jceks -storetype jceks -storepass changeit -import -a
 * add all DELEGATED permissions - see Permissions.
 * fill all required Configuration properties in resource (clientId, clientSecret, tenantId) - see also samples.
 
+### Authentication
+
+The connector uses MSAL4J confidential-client authentication against the
+tenant-specific authority `https://login.microsoftonline.com/{tenantId}` and
+requests the Microsoft Graph application scope
+`https://graph.microsoft.com/.default`. One MSAL application is retained for a
+connector configuration so that MSAL's token cache can be reused.
+
+Existing resource configurations remain valid. The configuration property names
+`clientId`, `clientSecret`, `tenantId`, `certificateBasedAuthentication`,
+`certificatePath`, and `privateKeyPath` have not changed. Client-secret
+authentication remains the default. Certificate authentication continues to use
+an X.509 certificate plus an RSA PKCS#8 private key in DER or PEM form. Existing
+proxy and failover/custom trust-store settings are also applied to token
+acquisition.
+
+This release replaces ADAL4J resource-based token acquisition with MSAL4J scope-
+based acquisition. Existing Entra application permissions and administrator
+consent remain in effect through the `/.default` scope. After upgrading the
+connector JAR, restart the connector host so the new assembled dependencies are
+loaded; do not deploy ADAL4J alongside the assembled connector as a workaround.
+
+### Optional authentication integration test
+
+Authentication integration tests are opt-in and must use a dedicated
+non-production tenant. Supply values through an approved secret-injection
+mechanism as process environment variables; never put them in the tracked
+`src/test/resources/testProperties/propertiesForTest.properties` file.
+
+Required for both modes:
+
+- `MSGRAPH_TEST_CLIENT_ID`
+- `MSGRAPH_TEST_TENANT_ID`
+
+Additional client-secret variable:
+
+- `MSGRAPH_TEST_CLIENT_SECRET`
+
+Additional certificate variables:
+
+- `MSGRAPH_TEST_CERTIFICATE_PATH`
+- `MSGRAPH_TEST_PRIVATE_KEY_PATH`
+
+Run only after confirming the tenant, least-privilege application permissions,
+consent, proxy/TLS requirements, and local secret handling:
+
+```
+mvn -Dgroups=authentication-integration -Dtest=AuthenticationIntegrationTest test
+```
+
+The test performs authentication and the connector's read-only connection test
+once for each configured credential mode. It does not load the tracked tenant
+properties file.
+
 ## Permissions
 
 This are permissions which you need to add to your Entra ID (former Azure Active Directory) application for midPoint:
