@@ -109,6 +109,7 @@ public class LicenseProcessing extends ObjectProcessing {
                 .build());
         return new ObjectClassInfoBuilder()
                 .setType(type())
+                .setDescription("Microsoft 365 subscribed license SKU")
                 .addAllAttributeInfo(attributes)
                 .build();
     }
