@@ -37,20 +37,6 @@ requests the Microsoft Graph application scope
 `https://graph.microsoft.com/.default`. One MSAL application is retained for a
 connector configuration so that MSAL's token cache can be reused.
 
-Existing resource configurations remain valid. The configuration property names
-`clientId`, `clientSecret`, `tenantId`, `certificateBasedAuthentication`,
-`certificatePath`, and `privateKeyPath` have not changed. Client-secret
-authentication remains the default. Certificate authentication continues to use
-an X.509 certificate plus an RSA PKCS#8 private key in DER or PEM form. Existing
-proxy and failover/custom trust-store settings are also applied to token
-acquisition.
-
-This release replaces ADAL4J resource-based token acquisition with MSAL4J scope-
-based acquisition. Existing Entra application permissions and administrator
-consent remain in effect through the `/.default` scope. After upgrading the
-connector JAR, restart the connector host so the new assembled dependencies are
-loaded; do not deploy ADAL4J alongside the assembled connector as a workaround.
-
 ### Optional authentication integration test
 
 Authentication integration tests are opt-in and must use a dedicated
