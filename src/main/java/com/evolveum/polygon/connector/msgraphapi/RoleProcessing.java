@@ -58,6 +58,7 @@ public class RoleProcessing extends ObjectProcessing {
         ObjectClassInfoBuilder roleObjClassBuilder = new ObjectClassInfoBuilder();
 
         roleObjClassBuilder.setType(type());
+        roleObjClassBuilder.setDescription("Microsoft Entra ID directory role");
 
         // required attribute is icfs:name and icfs:uid
 
