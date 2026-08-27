@@ -2020,6 +2020,164 @@ public class FilteringTest extends BasicConfigurationForTests {
         deleteWaitAndRetry(objectClassGroup, groupYellow, goptions);
     }
 
+    @Test(priority = 43, groups = "integration")
+    public void filteringAccountEqualsBooleanValues() throws Exception {
+
+        msGraphConfiguration = getConfiguration();
+        msGraphConnector.init(msGraphConfiguration);
+
+        OperationOptions options = getDefaultAccountOperationOptions();
+        ObjectClass objectClassAccount = ObjectClass.ACCOUNT;
+
+        String enabledLocalPart = "filter-bool-enabled-" + System.currentTimeMillis();
+        String disabledLocalPart = "filter-bool-disabled-" + System.currentTimeMillis();
+
+        Uid enabledUser = null;
+        Uid disabledUser = null;
+
+        try {
+            enabledUser = createFilteringAccount(enabledLocalPart, true, options);
+            disabledUser = createFilteringAccount(disabledLocalPart, false, options);
+
+            AttributeFilter enabledFilter = (EqualsFilter) FilterBuilder.equalTo(
+                    AttributeBuilder.build("accountEnabled", true));
+            AttributeFilter enabledNameFilter = (StartsWithFilter) FilterBuilder.startsWith(
+                    AttributeBuilder.build(Name.NAME, enabledLocalPart));
+            AndFilter enabledAndFilter = (AndFilter) FilterBuilder.and(enabledFilter, enabledNameFilter);
+
+            assertFilterReturnsUid(
+                    objectClassAccount,
+                    enabledAndFilter,
+                    options,
+                    enabledUser,
+                    "Boolean filter accountEnabled=true did not return created user"
+            );
+
+            AttributeFilter disabledFilter = (EqualsFilter) FilterBuilder.equalTo(
+                    AttributeBuilder.build("accountEnabled", false));
+            AttributeFilter disabledNameFilter = (StartsWithFilter) FilterBuilder.startsWith(
+                    AttributeBuilder.build(Name.NAME, disabledLocalPart));
+            AndFilter disabledAndFilter = (AndFilter) FilterBuilder.and(disabledFilter, disabledNameFilter);
+
+            assertFilterReturnsUid(
+                    objectClassAccount,
+                    disabledAndFilter,
+                    options,
+                    disabledUser,
+                    "Boolean filter accountEnabled=false did not return created user"
+            );
+
+        } finally {
+            deleteIfCreated(objectClassAccount, enabledUser, options);
+            deleteIfCreated(objectClassAccount, disabledUser, options);
+        }
+    }
+
+    @Test(priority = 44, groups = "integration")
+    public void filteringAccountEqualsNullValues() throws Exception {
+
+        msGraphConfiguration = getConfiguration();
+        msGraphConnector.init(msGraphConfiguration);
+
+        OperationOptions options = getDefaultAccountOperationOptions();
+        ObjectClass objectClassAccount = ObjectClass.ACCOUNT;
+
+        String localPart = "filter-null-sync-" + System.currentTimeMillis();
+
+        Uid user = null;
+
+        try {
+            user = createFilteringAccount(localPart, true, options);
+
+            AttributeFilter nullFilter = (EqualsFilter) FilterBuilder.equalTo(
+                    AttributeBuilder.build("onPremisesSyncEnabled"));
+            AttributeFilter nameFilter = (StartsWithFilter) FilterBuilder.startsWith(
+                    AttributeBuilder.build(Name.NAME, localPart));
+            AndFilter nullAndNameFilter = (AndFilter) FilterBuilder.and(nullFilter, nameFilter);
+
+            assertFilterReturnsUid(
+                    objectClassAccount,
+                    nullAndNameFilter,
+                    options,
+                    user,
+                    "Null filter onPremisesSyncEnabled=null did not return created cloud-only user"
+            );
+
+            AttributeFilter nullStringFilter = (EqualsFilter) FilterBuilder.equalTo(
+                    AttributeBuilder.build("onPremisesSyncEnabled", "null"));
+            AndFilter nullStringAndNameFilter = (AndFilter) FilterBuilder.and(nullStringFilter, nameFilter);
+
+            assertFilterReturnsUid(
+                    objectClassAccount,
+                    nullStringAndNameFilter,
+                    options,
+                    user,
+                    "String null filter onPremisesSyncEnabled='null' did not return created cloud-only user"
+            );
+
+        } finally {
+            deleteIfCreated(objectClassAccount, user, options);
+        }
+    }
+
+    private Uid createFilteringAccount(String localPart, boolean enabled, OperationOptions options) throws Exception {
+        ObjectClass objectClassAccount = ObjectClass.ACCOUNT;
+        String upn = localPart + "@" + domain;
+
+        Set<Attribute> attributesAccount = new HashSet<>();
+        attributesAccount.add(AttributeBuilder.build("accountEnabled", enabled));
+        attributesAccount.add(AttributeBuilder.build("passwordProfile.forceChangePasswordNextSignIn", true));
+        attributesAccount.add(AttributeBuilder.build("displayName", localPart));
+        attributesAccount.add(AttributeBuilder.build("mail", upn));
+        attributesAccount.add(AttributeBuilder.build("mailNickname", localPart));
+        attributesAccount.add(AttributeBuilder.build("userPrincipalName", upn));
+        attributesAccount.add(AttributeBuilder.build("__PASSWORD__",
+                new GuardedString("HelloPassword99".toCharArray())));
+
+        try {
+            return msGraphConnector.create(objectClassAccount, attributesAccount, options);
+        } catch (InvalidAttributeValueException e) {
+            if (e.getLocalizedMessage().contains("Property netId is invalid")) {
+                LOG.warn("False 'netId is invalid error' again, ignoring. Executing search to retrieve UID.");
+                return fetchUidAtFalseValidationException(upn);
+            }
+            throw e;
+        }
+    }
+
+    private void assertFilterReturnsUid(ObjectClass objectClass, Filter filter, OperationOptions options,
+                                        Uid expectedUid, String failMessage) throws InterruptedException {
+
+        for (int i = 0; i < _REPEAT_COUNT; i++) {
+            TestSearchResultsHandler handler = getResultHandler();
+
+            msGraphConnector.executeQuery(objectClass, filter, handler, options);
+
+            if (containsUid(handler.getResult(), expectedUid)) {
+                return;
+            }
+
+            Thread.sleep(_REPEAT_INTERVAL);
+        }
+
+        Assert.fail(failMessage + ": " + expectedUid);
+    }
+
+    private boolean containsUid(List<ConnectorObject> results, Uid expectedUid) {
+        for (ConnectorObject object : results) {
+            if (expectedUid.equals(object.getUid())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void deleteIfCreated(ObjectClass objectClass, Uid uid, OperationOptions options) throws Exception {
+        if (uid != null) {
+            deleteWaitAndRetry(objectClass, uid, options);
+        }
+    }
+
    private Uid fetchUidAtFalseValidationException(String upn) throws InterruptedException {
 
 

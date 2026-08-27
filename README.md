@@ -29,6 +29,46 @@ keytool -keystore keystore.jceks -storetype jceks -storepass changeit -import -a
 * add all DELEGATED permissions - see Permissions.
 * fill all required Configuration properties in resource (clientId, clientSecret, tenantId) - see also samples.
 
+### Authentication
+
+The connector uses MSAL4J confidential-client authentication against the
+tenant-specific authority `https://login.microsoftonline.com/{tenantId}` and
+requests the Microsoft Graph application scope
+`https://graph.microsoft.com/.default`. One MSAL application is retained for a
+connector configuration so that MSAL's token cache can be reused.
+
+### Optional authentication integration test
+
+Authentication integration tests are opt-in and must use a dedicated
+non-production tenant. Supply values through an approved secret-injection
+mechanism as process environment variables; never put them in the tracked
+`src/test/resources/testProperties/propertiesForTest.properties` file.
+
+Required for both modes:
+
+- `MSGRAPH_TEST_CLIENT_ID`
+- `MSGRAPH_TEST_TENANT_ID`
+
+Additional client-secret variable:
+
+- `MSGRAPH_TEST_CLIENT_SECRET`
+
+Additional certificate variables:
+
+- `MSGRAPH_TEST_CERTIFICATE_PATH`
+- `MSGRAPH_TEST_PRIVATE_KEY_PATH`
+
+Run only after confirming the tenant, least-privilege application permissions,
+consent, proxy/TLS requirements, and local secret handling:
+
+```
+mvn -Dgroups=authentication-integration -Dtest=AuthenticationIntegrationTest test
+```
+
+The test performs authentication and the connector's read-only connection test
+once for each configured credential mode. It does not load the tracked tenant
+properties file.
+
 ## Permissions
 
 This are permissions which you need to add to your Entra ID (former Azure Active Directory) application for midPoint:
@@ -44,6 +84,7 @@ This are permissions which you need to add to your Entra ID (former Azure Active
 * GroupMember.ReadWrite.All
 * PrivilegedAccess.Read.AzureADGroup
 * PrivilegedAccess.ReadWrite.AzureADGroup
+* User.Invite.All
 * User.Read.All
 * User.ReadWrite.All
 #### Optional: Role Membership Management

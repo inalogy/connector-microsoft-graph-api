@@ -251,6 +251,9 @@ public class GenericListItemProcessing extends ObjectProcessing {
                                 ObjectClassInfoBuilder listRecordClassBuilder = new ObjectClassInfoBuilder();
                                 String schemaRecordName = site.name + SITE_LIST_DELIMITER + list.name;
                                 listRecordClassBuilder.setType(schemaRecordName);
+                                listRecordClassBuilder.setDescription(
+                                        "Microsoft SharePoint list item in site '" + site.name
+                                                + "', list '" + list.name + "'");
                                 // Add site and list id attributes to allow column updates
                                 // Both list id and site id must be updatable in order to synchronize correctly
                                 AttributeInfoBuilder attributeSiteId = new AttributeInfoBuilder(ATTR_SITE_ID);
