@@ -10,14 +10,20 @@ import org.apache.commons.codec.binary.Base64;
 import org.apache.http.*;
 import org.apache.http.client.HttpRequestRetryHandler;
 import org.apache.http.client.ServiceUnavailableRetryStrategy;
+import org.apache.http.client.config.RequestConfig;
 import org.apache.http.client.methods.*;
 import org.apache.http.client.protocol.HttpClientContext;
 import org.apache.http.client.utils.URIBuilder;
+import org.apache.http.config.Registry;
+import org.apache.http.config.RegistryBuilder;
+import org.apache.http.conn.socket.ConnectionSocketFactory;
+import org.apache.http.conn.socket.PlainConnectionSocketFactory;
 import org.apache.http.conn.ssl.SSLConnectionSocketFactory;
 import org.apache.http.entity.ByteArrayEntity;
 
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClientBuilder;
+import org.apache.http.impl.conn.PoolingHttpClientConnectionManager;
 import org.apache.http.protocol.HttpContext;
 import org.apache.http.util.EntityUtils;
 import org.identityconnectors.common.StringUtil;
@@ -71,6 +77,10 @@ public class GraphEndpoint {
 
     private final long SKEW = TimeUnit.MINUTES.toMillis(5);
 
+    private static final long IDLE_CONNECTION_EVICT_SECONDS = 60;
+    private static final long IO_RETRY_BASE_DELAY_MS = 1000;
+    private static final long IO_RETRY_MAX_DELAY_MS = 10000;
+
     private Boolean validateWithCustomAndDefaultTrust = false;
 
     GraphEndpoint(MSGraphConfiguration configuration) {
@@ -100,6 +110,7 @@ public class GraphEndpoint {
     protected void authenticate() {
         AuthenticationResult result = null;
         ExecutorService service = null;
+        Future<AuthenticationResult> future = null;
         LOG.ok("Processing through authenticate method");
 
         try {
@@ -121,7 +132,6 @@ public class GraphEndpoint {
                 LOG.info("Authenticating through proxy[{0}]", configuration.getProxyAddress());
                 context.setProxy(createProxy());
             }
-            Future<AuthenticationResult> future;
             if (configuration.isCertificateBasedAuthentication()) {
 
                 LOG.ok("Processing through certificate based authentication flow");
@@ -147,7 +157,16 @@ public class GraphEndpoint {
             }
             LOG.ok("Fetching authentication result");
 
-            result = future.get();
+            // adal4j runs the token request on its own executor with no timeout of its own, so an unbounded
+            // get() here is a second place a long running task can block forever. Token refresh happens mid
+            // import whenever the token nears expiry, which is exactly when a stuck import would be noticed.
+            result = future.get(configuration.getAuthenticationTimeout(), TimeUnit.SECONDS);
+        } catch (TimeoutException e) {
+            if (future != null) {
+                future.cancel(true);
+            }
+            throw new ConnectionFailedException("Timed out after " + configuration.getAuthenticationTimeout()
+                    + "s while acquiring an access token from " + AUTHORITY + configuration.getTenantId());
         } catch (InterruptedException | ExecutionException | GeneralSecurityException e) {
 //
 //            if (e.getCause() instanceof SSLException){
@@ -165,7 +184,10 @@ public class GraphEndpoint {
         } catch (IOException e) {
             LOG.error(e, e.toString());
         } finally {
-            service.shutdown();
+            if (service != null) {
+                // shutdownNow so that a token request abandoned on timeout cannot keep a thread alive
+                service.shutdownNow();
+            }
         }
 
         if (result == null) {
@@ -225,11 +247,57 @@ public class GraphEndpoint {
 
     protected void initHttpClient() {
         final HttpClientBuilder clientBuilder = HttpClientBuilder.create();
+
+        // Without an explicit RequestConfig all three timeouts default to "infinite", so a request that stalls
+        // mid-response never returns and the calling midPoint task stays running until the node is restarted.
+        final RequestConfig requestConfig = RequestConfig.custom()
+                .setConnectTimeout(configuration.getConnectTimeout())
+                .setSocketTimeout(configuration.getSocketTimeout())
+                .setConnectionRequestTimeout(configuration.getConnectionRequestTimeout())
+                .build();
+        clientBuilder.setDefaultRequestConfig(requestConfig);
+        LOG.ok("HTTP timeouts in ms -> connect: {0}, socket: {1}, connection request: {2}",
+                configuration.getConnectTimeout(), configuration.getSocketTimeout(),
+                configuration.getConnectionRequestTimeout());
+
+        // The socket factory has to be registered on the connection manager rather than through
+        // clientBuilder.setSSLSocketFactory(), because the builder ignores that setting as soon as a connection
+        // manager is supplied, which would silently drop the failover trust store and the hostname verifier.
+        final SSLConnectionSocketFactory sslSocketFactory;
+        if (configuration.isValidateWithFailoverTrust()) {
+            sslSocketFactory = new SSLConnectionSocketFactory(createCustomSSLSocketFactory(),
+                    new HostnameVerifier() {
+                        @Override
+                        public boolean verify(String hostname, SSLSession session) {
+                            return hostname != null ? hostname.equals(session.getPeerHost()) : false;
+                        }
+                    });
+        } else {
+            sslSocketFactory = SSLConnectionSocketFactory.getSocketFactory();
+        }
+
+        final Registry<ConnectionSocketFactory> socketFactoryRegistry = RegistryBuilder.<ConnectionSocketFactory>create()
+                .register("http", PlainConnectionSocketFactory.getSocketFactory())
+                .register("https", sslSocketFactory)
+                .build();
+
+        // The default pool allows only 2 connections per route and all traffic goes to a single Graph host,
+        // so a single stuck connection would otherwise halve throughput and two would deadlock the connector.
+        final PoolingHttpClientConnectionManager connectionManager = new PoolingHttpClientConnectionManager(
+                socketFactoryRegistry, null, null, null, configuration.getConnectionTimeToLive(), TimeUnit.SECONDS);
+        connectionManager.setDefaultMaxPerRoute(configuration.getMaxConnections());
+        connectionManager.setMaxTotal(configuration.getMaxConnections());
+        clientBuilder.setConnectionManager(connectionManager);
+
+        // Drop connections a firewall or load balancer may have silently killed while they sat idle in the pool.
+        // Kept well below the four minute idle timeout an Azure load balancer applies by default.
+        clientBuilder.evictIdleConnections(IDLE_CONNECTION_EVICT_SECONDS, TimeUnit.SECONDS);
+
         clientBuilder.setRetryHandler(myRetryHandler);
         clientBuilder.setServiceUnavailableRetryStrategy(new ServiceUnavailableRetryStrategy() {
             @Override
             public boolean retryRequest(HttpResponse response, int executionCount, HttpContext context) {
-                return executionCount <= 7 && response.getStatusLine().getStatusCode() >= 500 && response.getStatusLine().getStatusCode() < 600;
+                return executionCount <= configuration.getIoRetryCount() && response.getStatusLine().getStatusCode() >= 500 && response.getStatusLine().getStatusCode() < 600;
             }
 
             @Override
@@ -242,17 +310,6 @@ public class GraphEndpoint {
             clientBuilder.setProxy(
                     new HttpHost(configuration.getProxyAddress().getAddress(), configuration.getProxyAddress().getPort())
             );
-        }
-
-        if(configuration.isValidateWithFailoverTrust()){
-
-        clientBuilder.setSSLSocketFactory(new SSLConnectionSocketFactory(createCustomSSLSocketFactory(),
-                new HostnameVerifier() {
-                    @Override
-                    public boolean verify(String hostname, SSLSession session) {
-                        return hostname!=null ? hostname.equals(session.getPeerHost()) : false;
-                    }
-                }));
         }
 
         httpClient = clientBuilder.build();
@@ -286,41 +343,43 @@ public class GraphEndpoint {
                 IOException exception,
                 int executionCount,
                 HttpContext context) {
-            if (executionCount >= 10) {
+            if (executionCount > configuration.getIoRetryCount()) {
                 // Do not retry if over max retry count
+                LOG.warn("Giving up after {0} attempts, last failure: {1}", executionCount, exception);
                 return false;
             }
-        /*if (exception instanceof InterruptedIOException) {
-            // Timeout
-            return false;
-        }
-        if (exception instanceof UnknownHostException) {
-            // Unknown host
-            return false;
-        }
-        if (exception instanceof ConnectTimeoutException) {
-            // Connection refused
-            return false;
-        }
-        if (exception instanceof SSLException) {
-            // SSL handshake exception
-            return false;
-        } */
+
+            // An SSL handshake failure is not transient, retrying it only delays the error.
+            if (exception instanceof SSLException) {
+                return false;
+            }
 
             HttpClientContext clientContext = HttpClientContext.adapt(context);
             HttpRequest request = clientContext.getRequest();
             boolean idempotent = !(request instanceof HttpEntityEnclosingRequest);
-            if (idempotent) {
-                // Retry if the request is considered idempotent
-                return true;
+            boolean retry = idempotent || exception instanceof org.apache.http.NoHttpResponseException;
+
+            if (!retry) {
+                return false;
             }
 
             if (exception instanceof org.apache.http.NoHttpResponseException) {
-                LOG.warn("No response from server on " + executionCount + " call");
-                return true;
+                LOG.warn("No response from server on {0} call", executionCount);
+            } else {
+                LOG.warn("Retrying request after failure on {0} call: {1}", executionCount, exception);
             }
 
-            return false;
+            // Back off between attempts. The original handler retried up to ten times with no delay at all,
+            // which turned a brief outage into a burst of requests against the same failing endpoint.
+            long delay = Math.min(IO_RETRY_BASE_DELAY_MS * (1L << (executionCount - 1)), IO_RETRY_MAX_DELAY_MS);
+            try {
+                Thread.sleep(delay);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return false;
+            }
+
+            return true;
         }
 
     };
@@ -597,52 +656,54 @@ public class GraphEndpoint {
         request.setEntity(entity);
         LOG.info("request {0}", request);
         // execute request
+        // The response has to be closed on every path, including the parseResult == false one. Leaving it open
+        // leaked the underlying connection, which eventually exhausted the pool and blocked all further calls.
         CloseableHttpResponse response = executeRequest(request, true);
-        LOG.info("response: {0}", response);
-
-        processResponseErrors(response, false);
-        int statusCode = response.getStatusLine().getStatusCode();
-        if (statusCode == 201) {
-            LOG.ok("201 - Created");
-        } else if (statusCode == 204) {
-            LOG.ok("204 - no content");
-        } else {
-            LOG.info("statuscode - {0}", statusCode);
-        }
-
-
-        if (!parseResult) {
-            return null;
-        }
-
-        // result as output
-        HttpEntity responseEntity = response.getEntity();
         try {
-            // String result = EntityUtils.toString(responseEntity);
-            byte[] byteResult = EntityUtils.toByteArray(responseEntity);
-            String result = new String(byteResult, "ISO-8859-2");
+            LOG.info("response: {0}", response);
+
+            processResponseErrors(response, false);
+            int statusCode = response.getStatusLine().getStatusCode();
+            if (statusCode == 201) {
+                LOG.ok("201 - Created");
+            } else if (statusCode == 204) {
+                LOG.ok("204 - no content");
+            } else {
+                LOG.info("statuscode - {0}", statusCode);
+            }
+
+            if (!parseResult) {
+                return null;
+            }
+
+            // result as output
+            HttpEntity responseEntity = response.getEntity();
+            try {
+                // String result = EntityUtils.toString(responseEntity);
+                byte[] byteResult = EntityUtils.toByteArray(responseEntity);
+                String result = new String(byteResult, "ISO-8859-2");
+                LOG.info("result: {0}", result);
+                return new JSONObject(result);
+            } catch (IOException e) {
+                StringBuilder sb = new StringBuilder();
+                sb.append("Failed creating result from HttpEntity: ").append(responseEntity).append(";")
+                        .append(e.getLocalizedMessage());
+                throw new ConnectorIOException(sb.toString(), e);
+            }
+        } finally {
             responseClose(response);
-            LOG.info("result: {0}", result);
-            return new JSONObject(result);
-        } catch (IOException e) {
-            StringBuilder sb = new StringBuilder();
-            sb.append("Failed creating result from HttpEntity: ").append(responseEntity).append(";")
-                    .append(e.getLocalizedMessage());
-            responseClose(response);
-            throw new ConnectorIOException(sb.toString(), e);
         }
     }
 
-
+    // A failed close must not turn an otherwise successful call into a connector error, so it is only logged.
     private void responseClose(CloseableHttpResponse response) {
         try {
             response.close();
         } catch (IOException e) {
-            StringBuilder sb = new StringBuilder();
-            sb.append("Failed close response: ").append(response);
-            LOG.warn(e, sb.toString());
+            LOG.warn(e, "Failed to close response: {0}", response);
         }
     }
+
 
     protected JSONObject executeGetRequest(String path, String customQuery, OperationOptions options) {
         LOG.info("executeGetRequest path {0}, customQuery {1}, options: {2}", path, customQuery, options);

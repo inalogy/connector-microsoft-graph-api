@@ -44,6 +44,15 @@ public class MSGraphConfiguration extends AbstractConfiguration
     private Integer postCreateReadRetryBaseDelayMs = 500;
     private Integer postCreateReadMaxRetryCount = 5;
 
+    //http transport
+    private Integer connectTimeout = 10000;
+    private Integer socketTimeout = 60000;
+    private Integer connectionRequestTimeout = 30000;
+    private Integer maxConnections = 20;
+    private Integer connectionTimeToLive = 300;
+    private Integer ioRetryCount = 3;
+    private Integer authenticationTimeout = 60;
+
     private GraphConfigurationHandler configHandler = new GraphConfigurationHandler();
 
     // Generic schema
@@ -278,6 +287,69 @@ public class MSGraphConfiguration extends AbstractConfiguration
         this.discoverSchema = discoverSchema;
     }
 
+    @ConfigurationProperty(order = 210)
+    public Integer getConnectTimeout() {
+        return connectTimeout;
+    }
+
+    public void setConnectTimeout(Integer connectTimeout) {
+        this.connectTimeout = connectTimeout;
+    }
+
+    @ConfigurationProperty(order = 220)
+    public Integer getSocketTimeout() {
+        return socketTimeout;
+    }
+
+    public void setSocketTimeout(Integer socketTimeout) {
+        this.socketTimeout = socketTimeout;
+    }
+
+    @ConfigurationProperty(order = 230)
+    public Integer getConnectionRequestTimeout() {
+        return connectionRequestTimeout;
+    }
+
+    public void setConnectionRequestTimeout(Integer connectionRequestTimeout) {
+        this.connectionRequestTimeout = connectionRequestTimeout;
+    }
+
+    @ConfigurationProperty(order = 240)
+    public Integer getMaxConnections() {
+        return maxConnections;
+    }
+
+    public void setMaxConnections(Integer maxConnections) {
+        this.maxConnections = maxConnections;
+    }
+
+    @ConfigurationProperty(order = 250)
+    public Integer getConnectionTimeToLive() {
+        return connectionTimeToLive;
+    }
+
+    public void setConnectionTimeToLive(Integer connectionTimeToLive) {
+        this.connectionTimeToLive = connectionTimeToLive;
+    }
+
+    @ConfigurationProperty(order = 260)
+    public Integer getIoRetryCount() {
+        return ioRetryCount;
+    }
+
+    public void setIoRetryCount(Integer ioRetryCount) {
+        this.ioRetryCount = ioRetryCount;
+    }
+
+    @ConfigurationProperty(order = 270)
+    public Integer getAuthenticationTimeout() {
+        return authenticationTimeout;
+    }
+
+    public void setAuthenticationTimeout(Integer authenticationTimeout) {
+        this.authenticationTimeout = authenticationTimeout;
+    }
+
     @Override
     public void validate() {
         LOG.info("Processing trough configuration validation procedure.");
@@ -344,6 +416,36 @@ public class MSGraphConfiguration extends AbstractConfiguration
         if (postCreateReadMaxRetryCount < 0) {
             throw new ConfigurationException("The specified number for the post create read max retry count has to be " +
                     "greater than zero!");
+        }
+
+        // A non positive timeout means "wait forever" in Apache HttpClient, which is what makes a stalled
+        // request hang a midPoint task indefinitely. Reject it rather than silently restoring that behaviour.
+        if (connectTimeout == null || connectTimeout <= 0) {
+            throw new ConfigurationException("Connect timeout has to be a positive number of milliseconds!");
+        }
+
+        if (socketTimeout == null || socketTimeout <= 0) {
+            throw new ConfigurationException("Socket timeout has to be a positive number of milliseconds!");
+        }
+
+        if (connectionRequestTimeout == null || connectionRequestTimeout <= 0) {
+            throw new ConfigurationException("Connection request timeout has to be a positive number of milliseconds!");
+        }
+
+        if (maxConnections == null || maxConnections <= 0) {
+            throw new ConfigurationException("The maximum number of connections has to be a positive number!");
+        }
+
+        if (connectionTimeToLive == null || connectionTimeToLive <= 0) {
+            throw new ConfigurationException("Connection time to live has to be a positive number of seconds!");
+        }
+
+        if (ioRetryCount == null || ioRetryCount < 0) {
+            throw new ConfigurationException("The specified number for the IO retry count has to be a non negative number!");
+        }
+
+        if (authenticationTimeout == null || authenticationTimeout <= 0) {
+            throw new ConfigurationException("Authentication timeout has to be a positive number of seconds!");
         }
 
         LOG.info("Configuration valid");
