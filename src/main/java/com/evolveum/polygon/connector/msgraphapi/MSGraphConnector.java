@@ -79,6 +79,12 @@ public class MSGraphConnector implements Connector,
 
         configuration = null;
 
+        closeGraphEndpoint();
+    }
+
+    // Replacing an endpoint without closing the previous one leaks its connection pool and the idle
+    // eviction thread, so every assignment of a new GraphEndpoint has to go through this first.
+    private void closeGraphEndpoint() {
         if (graphEndpoint != null) {
             graphEndpoint.close();
             graphEndpoint = null;
@@ -332,7 +338,10 @@ public class MSGraphConnector implements Connector,
 
                 LOG.ok("Sync operation -> Object handler execution for the User object {0} ", userUID);
 
-                handler.handle(builder.build());
+                if (!handler.handle(builder.build())) {
+                    LOG.ok("Sync results handler requested to stop processing further deltas");
+                    break;
+                }
 
             }
 
@@ -570,6 +579,7 @@ public class MSGraphConnector implements Connector,
 
         LOG.info("Starting graph endpoint instance as part of Partial configuration test while leveraging default" +
                 " Java truststore in case of environment trustStore returns with exception");
+        closeGraphEndpoint();
         graphEndpoint = new GraphEndpoint(configuration, true);
         LOG.info("Execution of default test method");
         test();
@@ -584,6 +594,7 @@ public class MSGraphConnector implements Connector,
             try {
 
             configuration.setValidateWithFailoverTrust(false);
+            closeGraphEndpoint();
             graphEndpoint = new GraphEndpoint(configuration);
              } catch (ConnectionFailedException e){
 

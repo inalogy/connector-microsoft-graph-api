@@ -95,7 +95,14 @@ public class GraphEndpoint {
 
         authenticate();
         initHttpClient();
-        initSchema();
+        try {
+            initSchema();
+        } catch (RuntimeException e) {
+            // The client (and its idle eviction thread) is already running; without this close a failed
+            // schema fetch would leak them, as the framework never disposes a half-constructed endpoint.
+            close();
+            throw e;
+        }
     }
 
 
@@ -166,7 +173,7 @@ public class GraphEndpoint {
                 future.cancel(true);
             }
             throw new ConnectionFailedException("Timed out after " + configuration.getAuthenticationTimeout()
-                    + "s while acquiring an access token from " + AUTHORITY + configuration.getTenantId());
+                    + "s while acquiring an access token from " + AUTHORITY + configuration.getTenantId(), e);
         } catch (InterruptedException | ExecutionException | GeneralSecurityException e) {
 //
 //            if (e.getCause() instanceof SSLException){
@@ -180,9 +187,11 @@ public class GraphEndpoint {
 //                }
 //            }
 
-            throw new ConnectionFailedException("Exception while authenticating to the service provider: "+ e.getLocalizedMessage());
+            throw new ConnectionFailedException("Exception while authenticating to the service provider: "
+                    + e.getLocalizedMessage(), e);
         } catch (IOException e) {
-            LOG.error(e, e.toString());
+            throw new ConnectionFailedException("IO exception while authenticating to the service provider: "
+                    + e.getLocalizedMessage(), e);
         } finally {
             if (service != null) {
                 // shutdownNow so that a token request abandoned on timeout cannot keep a thread alive
@@ -581,7 +590,8 @@ public class GraphEndpoint {
             }
             return new JSONObject(result);
         } catch (IOException e) {
-            throw new ConnectorIOException();
+            throw new ConnectorIOException("IO exception while processing the response of the request "
+                    + request.getRequestLine() + ": " + e.getLocalizedMessage(), e);
         }
 
     }
@@ -607,7 +617,8 @@ public class GraphEndpoint {
                     return new JSONObject(result);
                 }
             } catch (IOException e) {
-                throw new ConnectorIOException();
+                throw new ConnectorIOException("IO exception while processing the response of the role assignments"
+                        + " request " + request.getRequestLine() + ": " + e.getLocalizedMessage(), e);
             }
 
             try {
@@ -633,7 +644,8 @@ public class GraphEndpoint {
                 return new JSONObject(Collections.singletonMap("data", result));
             }
         } catch (IOException e) {
-            throw new ConnectorIOException();
+            throw new ConnectorIOException("IO exception while processing the response of the photo request "
+                    + request.getRequestLine() + ": " + e.getLocalizedMessage(), e);
         }
     }
 
@@ -857,7 +869,8 @@ public class GraphEndpoint {
                 LOG.error("Not updated, statusCode: {0}", statusCode);
             }
         } catch (IOException e) {
-            throw new ConnectorIOException();
+            throw new ConnectorIOException("IO exception while processing the response of the request "
+                    + request.getRequestLine() + ": " + e.getLocalizedMessage(), e);
         }
 
 
@@ -973,11 +986,18 @@ public class GraphEndpoint {
         return customManager;
     }
 
+    // Cleanup path: a failed close must never propagate out of dispose(), only be logged. Closing the client
+    // also stops the idle connection evictor thread and the pooling connection manager.
     public void close() {
+        if (httpClient == null) {
+            return;
+        }
         try {
             httpClient.close();
         } catch (IOException e) {
-            throw new ConnectorIOException(e);
+            LOG.warn(e, "Failed to close the HTTP client: {0}", e.getLocalizedMessage());
+        } finally {
+            httpClient = null;
         }
     }
 }
