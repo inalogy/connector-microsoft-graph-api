@@ -1,0 +1,14 @@
+<org xmlns="http://midpoint.evolveum.com/xml/ns/public/common/common-3" xmlns:c="http://midpoint.evolveum.com/xml/ns/public/common/common-3" xmlns:icfs="http://midpoint.evolveum.com/xml/ns/public/connector/icf-1/resource-schema-3" xmlns:org="http://midpoint.evolveum.com/xml/ns/public/common/org-3" xmlns:q="http://prism.evolveum.com/xml/ns/public/query-3" xmlns:ri="http://midpoint.evolveum.com/xml/ns/public/resource/instance-3" xmlns:t="http://prism.evolveum.com/xml/ns/public/types-3" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" oid="fa4b4ab8-c81c-4397-aa97-57d1a17e6166">
+    <name>Enterprise Applications</name>
+    <description>Root of the org tree branch holding the Entra enterprise applications (service principals) imported
+        read-only from the Entra test tenant. Every imported application becomes a child org of this one; Entra
+        groups assigned to an application become members of that application org.</description>
+    <displayName>
+        <t:orig>Enterprise Applications</t:orig>
+        <t:norm>enterprise applications</t:norm>
+        <t:lang>
+            <t:sk>Podnikové aplikácie</t:sk>
+        </t:lang>
+    </displayName>
+    <identifier>entra-test-enterprise-applications</identifier>
+</org>

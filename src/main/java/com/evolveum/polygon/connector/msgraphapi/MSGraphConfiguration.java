@@ -55,6 +55,12 @@ public class MSGraphConfiguration extends AbstractConfiguration
     private String[] userDirectoryExtensions;
     private String[] groupDirectoryExtensions;
 
+    // Enterprise applications
+    public static final String DEFAULT_SERVICE_PRINCIPAL_FILTER =
+            "tags/any(t:t eq 'WindowsAzureActiveDirectoryIntegratedApp')";
+    private String servicePrincipalFilter = DEFAULT_SERVICE_PRINCIPAL_FILTER;
+    private String enterpriseAppName;
+
     @ConfigurationProperty(order = 10, displayMessageKey = "ClientId.display", helpMessageKey = "ClientId.help", required = true)
 
     public String getClientId() {
@@ -297,6 +303,31 @@ public class MSGraphConfiguration extends AbstractConfiguration
     public String[] getGroupDirectoryExtensions() {return groupDirectoryExtensions;}
 
     public void setGroupDirectoryExtensions(String[] groupDirectoryExtensions) {this.groupDirectoryExtensions = groupDirectoryExtensions;}
+
+    @ConfigurationProperty(order = 230,
+            displayMessageKey = "ServicePrincipalFilter.display",
+            helpMessageKey = "ServicePrincipalFilter.help"
+    )
+    public String getServicePrincipalFilter() {
+        return servicePrincipalFilter;
+    }
+
+    public void setServicePrincipalFilter(String servicePrincipalFilter) {
+        this.servicePrincipalFilter = servicePrincipalFilter;
+    }
+
+    // Not used by the connector; it carries the name for midPoint scripts that read the resource configuration.
+    @ConfigurationProperty(order = 240,
+            displayMessageKey = "EnterpriseAppName.display",
+            helpMessageKey = "EnterpriseAppName.help"
+    )
+    public String getEnterpriseAppName() {
+        return enterpriseAppName;
+    }
+
+    public void setEnterpriseAppName(String enterpriseAppName) {
+        this.enterpriseAppName = enterpriseAppName;
+    }
 
     @Override
     public void validate() {

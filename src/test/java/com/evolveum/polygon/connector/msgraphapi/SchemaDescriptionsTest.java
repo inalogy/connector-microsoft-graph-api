@@ -23,6 +23,8 @@ public class SchemaDescriptionsTest {
         assertDescription(schema, RoleProcessing.ROLE_NAME, "Microsoft Entra ID directory role");
         assertDescription(schema, LicenseProcessing.OBJECT_CLASS_NAME,
                 "Microsoft 365 subscribed license SKU");
+        assertDescription(schema, ServicePrincipalProcessing.OBJECT_CLASS_NAME,
+                "Microsoft Entra ID enterprise application (service principal)");
     }
 
     @Test

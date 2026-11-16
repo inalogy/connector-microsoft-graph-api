@@ -1,0 +1,46 @@
+<objectTemplate xmlns="http://midpoint.evolveum.com/xml/ns/public/common/common-3" xmlns:c="http://midpoint.evolveum.com/xml/ns/public/common/common-3" xmlns:icfs="http://midpoint.evolveum.com/xml/ns/public/connector/icf-1/resource-schema-3" xmlns:org="http://midpoint.evolveum.com/xml/ns/public/common/org-3" xmlns:q="http://prism.evolveum.com/xml/ns/public/query-3" xmlns:ri="http://midpoint.evolveum.com/xml/ns/public/resource/instance-3" xmlns:t="http://prism.evolveum.com/xml/ns/public/types-3" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" oid="f63cdda3-4497-4a8e-8085-daf35b61c3b8">
+    <name>EntraTest Group: Object Template</name>
+    <description>Object template of roles with the Entra Group archetype. Includes the Entra test naming template and
+        assigns the MR:RES:EntraTest:Group metarole, which provisions the role as an Entra group and its holders as
+        group members.</description>
+    <includeRef oid="3bf1a030-ecc5-473c-ab26-bc42b12d46b7" type="c:ObjectTemplateType"/>
+    <iterationSpecification>
+        <maxIterations>50</maxIterations>
+        <tokenExpression>
+            <script>
+                <code><![CDATA[
+return iteration == 0 ? '' : ' (' + basic.stringify(iteration) + ')'
+]]></code>
+            </script>
+        </tokenExpression>
+    </iterationSpecification>
+    <mapping>
+        <name>entra-test-group-metarole</name>
+        <description>Assigns the Entra group metarole to every Entra Group role.</description>
+        <documentation>The metarole carries the constructions that create the Entra group for the role and put the
+            role holders into it. The assignment is tagged with a subtype so that the mapping manages only its own
+            assignment.</documentation>
+        <strength>strong</strength>
+        <expression>
+            <assignmentTargetSearch>
+                <targetType>RoleType</targetType>
+                <oid>734dafcb-4e13-4274-9b56-40edb1401d13</oid>
+                <assignmentProperties xsi:type="c:AssignmentPropertiesSpecificationType">
+                    <subtype>entra-test-group-metarole</subtype>
+                </assignmentProperties>
+            </assignmentTargetSearch>
+        </expression>
+        <target>
+            <path>assignment</path>
+            <set>
+                <condition>
+                    <script>
+                        <code><![CDATA[
+return assignment?.subtype?.contains('entra-test-group-metarole') ?: false
+]]></code>
+                    </script>
+                </condition>
+            </set>
+        </target>
+    </mapping>
+</objectTemplate>

@@ -435,6 +435,11 @@ public class MSGraphConnector implements Connector,
 
             GroupProcessing groupProcessing = new GroupProcessing(getGraphEndpoint());
 
+            // Graph cannot filter groups by application, such queries never reach the filter translation
+            if (!fetchSpecificObject && groupProcessing.executeQueryForGroupByApplication(query, handler, options)) {
+                return;
+            }
+
             if(!fetchSpecificObject){
 
                 if(query!=null){
@@ -480,6 +485,10 @@ public class MSGraphConnector implements Connector,
 //            }
 
             roleProcessing.executeQueryForRole(query, handler, options);
+
+        } else if (objectClass.is(ServicePrincipalProcessing.OBJECT_CLASS_NAME)) {
+            ServicePrincipalProcessing servicePrincipalProcessing = new ServicePrincipalProcessing(getGraphEndpoint());
+            servicePrincipalProcessing.executeQueryForServicePrincipal(query, handler, options);
 
         } else {
             LOG.warn("Provided ObjectClass is not supported, trying generic support");
@@ -536,6 +545,10 @@ public class MSGraphConnector implements Connector,
         } else if (objectClass.is(RoleProcessing.ROLE_NAME)) { // __ROLE__
             RoleProcessing roleProcessing = new RoleProcessing(getGraphEndpoint());
             return roleProcessing.updateRole(uid, attrsDelta, options);
+
+        } else if (objectClass.is(ServicePrincipalProcessing.OBJECT_CLASS_NAME)) {
+            // Otherwise it would fall through to the SharePoint list item handling below.
+            throw new UnsupportedOperationException("Update operation is not supported for enterprise applications!");
 
         } else {
             LOG.warn("Provided ObjectClass is not supported, trying generic support");

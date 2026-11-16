@@ -1,0 +1,26 @@
+<task xmlns="http://midpoint.evolveum.com/xml/ns/public/common/common-3" xmlns:c="http://midpoint.evolveum.com/xml/ns/public/common/common-3" xmlns:icfs="http://midpoint.evolveum.com/xml/ns/public/connector/icf-1/resource-schema-3" xmlns:org="http://midpoint.evolveum.com/xml/ns/public/common/org-3" xmlns:q="http://prism.evolveum.com/xml/ns/public/query-3" xmlns:ri="http://midpoint.evolveum.com/xml/ns/public/resource/instance-3" xmlns:t="http://prism.evolveum.com/xml/ns/public/types-3" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" oid="ac8feb02-6961-4408-a7ea-9f4581ffd26f">
+    <name>[IMPORT] Entra Test:EnterpriseApps</name>
+    <description>One-time import of the Entra test tenant enterprise applications (service principals) as orgs under
+        Enterprise Applications. Run it first, before the group import, so that groups can be assigned to their
+        application orgs. Read-only towards Entra. Created suspended; start it manually.</description>
+    <assignment>
+        <targetRef oid="00000000-0000-0000-0000-000000000503" relation="org:default" type="c:ArchetypeType"/>
+    </assignment>
+    <ownerRef oid="00000000-0000-0000-0000-000000000002" relation="org:default" type="c:UserType"/>
+    <executionState>suspended</executionState>
+    <schedulingState>suspended</schedulingState>
+    <objectRef oid="a5e35e85-3e32-40a8-92f8-68796f48955b" relation="org:default" type="c:ResourceType"/>
+    <binding>loose</binding>
+    <activity>
+        <work>
+            <import>
+                <resourceObjects>
+                    <resourceRef oid="a5e35e85-3e32-40a8-92f8-68796f48955b" relation="org:default" type="c:ResourceType"/>
+                    <kind>entitlement</kind>
+                    <intent>enterpriseapp</intent>
+                    <objectclass>ri:CustomservicePrincipalObjectClass</objectclass>
+                </resourceObjects>
+            </import>
+        </work>
+    </activity>
+</task>

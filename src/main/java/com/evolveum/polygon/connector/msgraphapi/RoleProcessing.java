@@ -2,6 +2,7 @@ package com.evolveum.polygon.connector.msgraphapi;
 
 import org.apache.http.client.methods.*;
 import org.apache.http.client.utils.URIBuilder;
+import org.identityconnectors.framework.common.exceptions.UnknownUidException;
 import org.identityconnectors.framework.common.objects.*;
 import org.identityconnectors.framework.common.objects.filter.ContainsAllValuesFilter;
 import org.identityconnectors.framework.common.objects.filter.ContainsFilter;
@@ -192,7 +193,18 @@ public class RoleProcessing extends ObjectProcessing {
                 if (removeValue != null) {
 
                     String principalId = (String) removeValue;
-                    String roleAssignmentId = getRoleAssignmentId(options, roleDefinitionId, principalId);
+                    String roleAssignmentId;
+                    try {
+                        roleAssignmentId = getRoleAssignmentId(options, roleDefinitionId, principalId);
+                    } catch (UnknownUidException e) {
+                        roleAssignmentId = null;
+                    }
+                    if (roleAssignmentId == null) {
+                        // Nothing to delete: the principal does not hold the role (any more). Removing an absent
+                        // value is a success, otherwise a stale membership could never be cleaned up.
+                        LOG.ok("No role assignment of role {0} for principal {1}, nothing to remove", roleDefinitionId, principalId);
+                        continue;
+                    }
                     LOG.info("executeDeleteOperation principalId: {0} , sbPath: {1}", principalId, sbPath);
                     executeDeleteOperation(roleAssignmentId, sbPath.toString());
                 }
@@ -299,7 +311,17 @@ public class RoleProcessing extends ObjectProcessing {
 
         //get list of role members
         final String customQuery = "$select=principalId&$filter=roleDefinitionId eq '" + uid + "'";
-        final JSONArray roleMembers = endpoint.executeListRequest(ROLE_ASSIGNMENT, customQuery, null, true);
+        JSONArray roleMembers;
+        try {
+            roleMembers = endpoint.executeListRequest(ROLE_ASSIGNMENT, customQuery, null, true);
+        } catch (UnknownUidException e) {
+            // The role definition itself was just read, so this 404 is about its assignments, not the role. Graph
+            // answers it for the default user roles (User, Guest User, Restricted Guest User), which every user
+            // holds implicitly and which have no explicit assignments. Reporting it as UnknownUid would make the
+            // caller treat the role as deleted.
+            LOG.ok("No readable role assignments for role {0}, reporting no members: {1}", uid, e.getMessage());
+            roleMembers = new JSONArray();
+        }
         role.put(ATTR_MEMBERS, getJSONArray(roleMembers, "principalId"));
 
         return role;

@@ -3,17 +3,30 @@ package com.evolveum.polygon.connector.msgraphapi;
 import com.evolveum.polygon.connector.msgraphapi.util.ResourceQuery;
 import org.apache.http.client.methods.*;
 import org.apache.http.client.utils.URIBuilder;
+import org.identityconnectors.common.StringUtil;
 import org.identityconnectors.framework.common.exceptions.AlreadyExistsException;
 import org.identityconnectors.framework.common.exceptions.InvalidAttributeValueException;
 import org.identityconnectors.framework.common.exceptions.OperationTimeoutException;
+import org.identityconnectors.framework.common.exceptions.UnknownUidException;
 import org.identityconnectors.framework.common.objects.*;
+import org.identityconnectors.framework.common.objects.filter.AndFilter;
+import org.identityconnectors.framework.common.objects.filter.AttributeFilter;
+import org.identityconnectors.framework.common.objects.filter.CompositeFilter;
+import org.identityconnectors.framework.common.objects.filter.ContainsAllValuesFilter;
+import org.identityconnectors.framework.common.objects.filter.EqualsFilter;
+import org.identityconnectors.framework.common.objects.filter.Filter;
+import org.identityconnectors.framework.common.objects.filter.NotFilter;
+import org.identityconnectors.framework.common.objects.filter.OrFilter;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -23,6 +36,16 @@ public class GroupProcessing extends ObjectProcessing {
     private final static String GROUPS = "/groups";
     private final static String USERS = "/users";
     private final static String ROLE_ASSIGNMENT = "/roleManagement/directory/roleAssignments";
+    private final static String SERVICE_PRINCIPALS = "/servicePrincipals";
+    private final static String APP_ROLE_ASSIGNMENTS = "/appRoleAssignments";
+    private final static String APP_ROLE_ASSIGNED_TO = "/appRoleAssignedTo";
+    // the "default access" app role, used when a group is assigned to an application without a specific role
+    private final static String DEFAULT_APP_ROLE_ID = "00000000-0000-0000-0000-000000000000";
+    // Wait before the first application assignment of a new group, so that it has usually replicated.
+    static final long NEW_GROUP_APPLICATION_DELAY_MS = 2000;
+
+    long newGroupApplicationDelayMs = NEW_GROUP_APPLICATION_DELAY_MS;
+    private final static String PRINCIPAL_TYPE_GROUP = "Group";
 
     private static final String ATTR_ALLOWEXTERNALSENDERS = "allowExternalSenders";
     private static final String ATTR_AUTOSUBSCRIBENEWMEMBERS = "autoSubscribeNewMembers";
@@ -49,12 +72,18 @@ public class GroupProcessing extends ObjectProcessing {
     private static final String ATTR_MEMBERS = "members";
     private static final String ATTR_OWNERS = "owners";
     private static final String ATTR_MEMBER_OF_ROLE = "memberOfRole";
+    // object ids of the enterprise applications (service principals) the group is assigned to
+    public static final String ATTR_APPLICATIONS = "applications";
+    // their display names, read with the ids
+    public static final String ATTR_APPLICATION_NAMES = "applicationNames";
 
 
     protected static final Set<String> EXCLUDE_ATTRS_OF_GROUP = Stream.of(
             ATTR_MEMBERS,
             ATTR_OWNERS,
-            ATTR_MEMBER_OF_ROLE
+            ATTR_MEMBER_OF_ROLE,
+            ATTR_APPLICATIONS,
+            ATTR_APPLICATION_NAMES
     ).collect(Collectors.toSet());
 
     protected static final Set<String> UPDATABLE_MULTIPLE_VALUE_ATTRS_OF_GROUP = Stream.of(
@@ -208,6 +237,19 @@ public class GroupProcessing extends ObjectProcessing {
                 .setReturnedByDefault(false);
         groupObjClassBuilder.addAttributeInfo(attrRoleMembers.build());
 
+        // one extra request per group, so only on request
+        AttributeInfoBuilder attrApplications = new AttributeInfoBuilder(ATTR_APPLICATIONS);
+        attrApplications.setRequired(false).setType(String.class).setMultiValued(true)
+                .setCreateable(true).setUpdateable(true).setReadable(true)
+                .setReturnedByDefault(false);
+        groupObjClassBuilder.addAttributeInfo(attrApplications.build());
+
+        AttributeInfoBuilder attrApplicationNames = new AttributeInfoBuilder(ATTR_APPLICATION_NAMES);
+        attrApplicationNames.setRequired(false).setType(String.class).setMultiValued(true)
+                .setCreateable(false).setUpdateable(false).setReadable(true)
+                .setReturnedByDefault(false);
+        groupObjClassBuilder.addAttributeInfo(attrApplicationNames.build());
+
         return groupObjClassBuilder.build();
     }
 
@@ -312,6 +354,7 @@ public class GroupProcessing extends ObjectProcessing {
         // This is valid for security group creation
         Attribute members = null;
         Attribute owners = null;
+        Attribute applications = null;
         for (Attribute attribute : attributes) {
             switch (attribute.getName()) {
                 case ATTR_MEMBERS:
@@ -319,6 +362,9 @@ public class GroupProcessing extends ObjectProcessing {
                     break;
                 case ATTR_OWNERS:
                     owners = attribute;
+                    break;
+                case ATTR_APPLICATIONS:
+                    applications = attribute;
                     break;
             }
         }
@@ -349,7 +395,84 @@ public class GroupProcessing extends ObjectProcessing {
         // with the same displayName, due to temporary inconsistency.
         groupSyncFinishedCheck(groupDisplayName, endpoint.getConfiguration());
 
+        // Application assignments need the group id, so they can only follow the creation.
+        if (applications != null && applications.getValue() != null) {
+            addApplicationsToNewGroup(newUid, applications.getValue(), endpoint.getConfiguration());
+        }
+
         return new Uid(newUid);
+    }
+
+    /**
+     * Assigns a freshly created group to applications.
+     * <p>
+     * Entra replicates a new group gradually: it can already be found by its displayName while requests
+     * addressing it by id still fail with 404 (or 400 "Invalid object identifier"), both reported as
+     * {@link UnknownUidException}. A new group has no application assignments yet, so the current ones are
+     * not read; each assignment is posted directly after an initial delay, and a failed post is retried
+     * with the post-create backoff. An assignment that turns out to exist already (a retried post whose
+     * first attempt went through) counts as done.
+     */
+    void addApplicationsToNewGroup(String groupId, List<Object> applications, MSGraphConfiguration configuration) {
+        Set<String> applicationIds = new LinkedHashSet<>();
+        for (Object value : applications) {
+            if (value != null && StringUtil.isNotBlank(value.toString())) {
+                applicationIds.add(value.toString());
+            }
+        }
+        if (applicationIds.isEmpty()) {
+            return;
+        }
+
+        sleep(newGroupApplicationDelayMs);
+        for (String applicationId : applicationIds) {
+            postApplicationAssignmentWithRetry(groupId, applicationId, configuration);
+        }
+    }
+
+    private void postApplicationAssignmentWithRetry(String groupId, String applicationId, MSGraphConfiguration configuration) {
+        int retryCount = 0;
+        while (true) {
+            try {
+                postApplicationAssignment(groupId, applicationId);
+                return;
+            } catch (AlreadyExistsException e) {
+                LOG.info("Group {0} is already assigned to application {1}", groupId, applicationId);
+                return;
+            } catch (UnknownUidException e) {
+                retryCount++;
+                if (retryCount >= configuration.getPostCreateReadMaxRetryCount()) {
+                    throw e;
+                }
+                long sleepTime = configuration.getPostCreateReadRetryBaseDelayMs() * (1L << (retryCount - 1));
+                LOG.warn("New group {0} not replicated yet, assigning it to application {1} failed ({2}), retry {3} after {4} ms",
+                        groupId, applicationId, e.getMessage(), retryCount, sleepTime);
+                sleep(sleepTime);
+            }
+        }
+    }
+
+    private void postApplicationAssignment(String groupId, String applicationId) {
+        final GraphEndpoint endpoint = getGraphEndpoint();
+        LOG.info("Assigning group {0} to application {1}", groupId, applicationId);
+        JSONObject assignment = new JSONObject()
+                .put("principalId", groupId)
+                .put("resourceId", applicationId)
+                .put("appRoleId", DEFAULT_APP_ROLE_ID);
+        URIBuilder uriBuilder = endpoint.createURIBuilder().setPath(GROUPS + "/" + groupId + APP_ROLE_ASSIGNMENTS);
+        endpoint.callRequest(new HttpPost(endpoint.getUri(uriBuilder)), assignment, false);
+    }
+
+    private static void sleep(long millis) {
+        if (millis <= 0) {
+            return;
+        }
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new OperationTimeoutException("Interrupted while waiting for a new group to replicate");
+        }
     }
 
     protected Set<AttributeDelta> updateGroup(Uid uid, Set<AttributeDelta> attrsDelta, OperationOptions options) {
@@ -359,6 +482,7 @@ public class GroupProcessing extends ObjectProcessing {
         List<String> oldSelectors = new ArrayList<>();
         AttributeDelta members = null;
         AttributeDelta owners = null;
+        AttributeDelta applications = null;
         for (AttributeDelta delta : attrsDelta) {
             if (UPDATABLE_MULTIPLE_VALUE_ATTRS_OF_GROUP.contains(delta.getName())) {
                 oldSelectors.add(delta.getName());
@@ -376,6 +500,9 @@ public class GroupProcessing extends ObjectProcessing {
                     break;
                 case ATTR_OWNERS:
                     owners = delta;
+                    break;
+                case ATTR_APPLICATIONS:
+                    applications = delta;
                     break;
             }
         }
@@ -408,8 +535,52 @@ public class GroupProcessing extends ObjectProcessing {
         // Update other resources if necessary
         addOrRemoveMember(uid, members, GROUPS);
         addOrRemoveOwner(uid, owners, GROUPS);
+        if (applications != null) {
+            addOrRemoveApplications(uid.getUidValue(), applications.getValuesToAdd(), applications.getValuesToRemove());
+        }
 
         return null;
+    }
+
+    /**
+     * Assigns the group to the applications in {@code toAdd} and removes its assignments to the
+     * applications in {@code toRemove}. Values are service principal object ids. Adding an application
+     * the group is already assigned to, or removing one it is not assigned to, changes nothing.
+     */
+    private void addOrRemoveApplications(String groupId, List<Object> toAdd, List<Object> toRemove) {
+        final GraphEndpoint endpoint = getGraphEndpoint();
+        final String assignmentsPath = GROUPS + "/" + groupId + APP_ROLE_ASSIGNMENTS;
+
+        // application id -> ids of the group's assignments to it (one per app role)
+        Map<String, List<String>> current = new LinkedHashMap<>();
+        JSONArray assignments = endpoint.executeListRequest(assignmentsPath, "$select=id,resourceId", null, true);
+        for (int i = 0; i < assignments.length(); i++) {
+            JSONObject assignment = assignments.getJSONObject(i);
+            current.computeIfAbsent(assignment.optString("resourceId"), k -> new ArrayList<>())
+                    .add(assignment.optString(ATTR_ID));
+        }
+
+        if (toRemove != null) {
+            for (Object value : toRemove) {
+                if (value == null) {
+                    continue;
+                }
+                for (String assignmentId : current.getOrDefault(value.toString(), Collections.emptyList())) {
+                    LOG.info("Removing assignment {0} of group {1} to application {2}", assignmentId, groupId, value);
+                    URIBuilder uriBuilder = endpoint.createURIBuilder().setPath(assignmentsPath + "/" + assignmentId);
+                    endpoint.callRequest(new HttpDelete(endpoint.getUri(uriBuilder)), false);
+                }
+            }
+        }
+
+        if (toAdd != null) {
+            for (Object value : toAdd) {
+                if (value == null || current.containsKey(value.toString())) {
+                    continue;
+                }
+                postApplicationAssignment(groupId, value.toString());
+            }
+        }
     }
 
     private void groupSyncFinishedCheck(String displayName, MSGraphConfiguration configuration) {
@@ -708,6 +879,151 @@ public class GroupProcessing extends ObjectProcessing {
     }
 
     /**
+     * Query the applications a group is assigned to, add their ids and display names to the group's JSON
+     * attributes (multivalue). A group holding several app roles of the same application lists it once.
+     *
+     * @param group Group to query for (JSON object resulting from previous API call)
+     * @return Original JSON, enriched with application information
+     */
+    private JSONObject saturateGroupApplications(JSONObject group) {
+        final GraphEndpoint endpoint = getGraphEndpoint();
+        final String uid = group.getString(ATTR_ID);
+
+        final JSONArray assignments = endpoint.executeListRequest(
+                GROUPS + "/" + uid + APP_ROLE_ASSIGNMENTS, "$select=resourceId,resourceDisplayName", null, true);
+        Set<String> applications = new LinkedHashSet<>();
+        Set<String> applicationNames = new LinkedHashSet<>();
+        for (int i = 0; i < assignments.length(); i++) {
+            JSONObject assignment = assignments.getJSONObject(i);
+            String resourceId = assignment.optString("resourceId");
+            if (StringUtil.isNotBlank(resourceId) && applications.add(resourceId)) {
+                String resourceName = assignment.optString("resourceDisplayName");
+                if (StringUtil.isNotBlank(resourceName)) {
+                    applicationNames.add(resourceName);
+                }
+            }
+        }
+        group.put(ATTR_APPLICATIONS, new JSONArray(applications));
+        group.put(ATTR_APPLICATION_NAMES, new JSONArray(applicationNames));
+        return group;
+    }
+
+    /**
+     * Graph cannot filter groups by their application assignments, so a query on {@link #ATTR_APPLICATIONS}
+     * is answered here instead of being translated to a Graph filter.
+     * <p>
+     * When the query names one application (an equality, possibly inside an AND), only that application's
+     * assigned groups are read. Any other query on applications reads all groups. Either way the whole query is
+     * then evaluated on each group, with its applications loaded.
+     *
+     * @return false when the query does not concern applications and has to be translated as usual
+     */
+    public boolean executeQueryForGroupByApplication(Filter query, ResultsHandler handler, OperationOptions options) {
+        if (query == null || !referencesApplications(query)) {
+            return false;
+        }
+        final GraphEndpoint endpoint = getGraphEndpoint();
+        final ResultsHandler filtering = connectorObject -> !matches(query, connectorObject) || handler.handle(connectorObject);
+
+        final String applicationId = applicationIdOf(query);
+        if (applicationId == null) {
+            LOG.warn("Filter {0} on {1} names no single application, evaluating it on all groups", query, ATTR_APPLICATIONS);
+            endpoint.executeListRequest(GROUPS, null, options, true,
+                    (opts, group) -> handleJSONObject(opts, saturateGroupApplications(group), filtering));
+            return true;
+        }
+
+        final JSONArray assignments;
+        try {
+            assignments = endpoint.executeListRequest(SERVICE_PRINCIPALS + "/" + applicationId + APP_ROLE_ASSIGNED_TO,
+                    "$select=principalId,principalType", null, true);
+        } catch (UnknownUidException e) {
+            LOG.info("Application {0} does not exist, no group is assigned to it", applicationId);
+            return true;
+        }
+
+        Set<String> groupIds = new LinkedHashSet<>();
+        for (int i = 0; i < assignments.length(); i++) {
+            JSONObject assignment = assignments.getJSONObject(i);
+            if (PRINCIPAL_TYPE_GROUP.equals(assignment.optString("principalType"))) {
+                groupIds.add(assignment.optString("principalId"));
+            }
+        }
+
+        for (String groupId : groupIds) {
+            final JSONObject group;
+            try {
+                group = endpoint.executeGetRequest(GROUPS + "/" + groupId, null, options);
+            } catch (UnknownUidException e) {
+                LOG.info("Group {0} assigned to application {1} no longer exists, skipping it", groupId, applicationId);
+                continue;
+            }
+            if (!handleJSONObject(options, saturateGroupApplications(group), filtering)) {
+                return true;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Evaluates the filter on a group. An equality on {@link #ATTR_APPLICATIONS} means the group is assigned to
+     * the application, as midPoint means it for a multivalued attribute; ConnId's own equality would require the
+     * group to be assigned to that application alone.
+     */
+    private static boolean matches(Filter filter, ConnectorObject group) {
+        if (filter instanceof AndFilter) {
+            return matches(((AndFilter) filter).getLeft(), group) && matches(((AndFilter) filter).getRight(), group);
+        }
+        if (filter instanceof OrFilter) {
+            return matches(((OrFilter) filter).getLeft(), group) || matches(((OrFilter) filter).getRight(), group);
+        }
+        if (filter instanceof NotFilter) {
+            return !matches(((NotFilter) filter).getFilter(), group);
+        }
+        if ((filter instanceof EqualsFilter || filter instanceof ContainsAllValuesFilter)
+                && ATTR_APPLICATIONS.equals(((AttributeFilter) filter).getName())) {
+            Attribute applications = group.getAttributeByName(ATTR_APPLICATIONS);
+            List<Object> required = ((AttributeFilter) filter).getAttribute().getValue();
+            return applications != null && applications.getValue() != null && required != null
+                    && applications.getValue().containsAll(required);
+        }
+        return filter.accept(group);
+    }
+
+    private static boolean referencesApplications(Filter filter) {
+        if (filter instanceof AttributeFilter) {
+            return ATTR_APPLICATIONS.equals(((AttributeFilter) filter).getName());
+        }
+        if (filter instanceof CompositeFilter) {
+            return referencesApplications(((CompositeFilter) filter).getLeft())
+                    || referencesApplications(((CompositeFilter) filter).getRight());
+        }
+        if (filter instanceof NotFilter) {
+            return referencesApplications(((NotFilter) filter).getFilter());
+        }
+        return false;
+    }
+
+    /**
+     * The single application id the query requires, or null when the query does not require one.
+     */
+    private static String applicationIdOf(Filter filter) {
+        if (filter instanceof EqualsFilter || filter instanceof ContainsAllValuesFilter) {
+            Attribute attr = ((AttributeFilter) filter).getAttribute();
+            if (ATTR_APPLICATIONS.equals(attr.getName()) && attr.getValue() != null && attr.getValue().size() == 1
+                    && attr.getValue().get(0) != null) {
+                return AttributeUtil.getAsStringValue(attr);
+            }
+            return null;
+        }
+        if (filter instanceof AndFilter) {
+            String left = applicationIdOf(((AndFilter) filter).getLeft());
+            return left != null ? left : applicationIdOf(((AndFilter) filter).getRight());
+        }
+        return null;
+    }
+
+    /**
      * Adds group accounts to the group JSON Object. Decides upon members or owners based on @param isMembers.
      *
      * @param group     Original group object to extend with owners or members account ids
@@ -751,11 +1067,21 @@ public class GroupProcessing extends ObjectProcessing {
             group = saturateGroupRoleMembership(group);
         }
 
+        // a search by application has loaded them already
+        if (!group.has(ATTR_APPLICATIONS) && (shouldSaturate(options, ObjectClass.GROUP_NAME, ATTR_APPLICATIONS)
+                || shouldSaturate(options, ObjectClass.GROUP_NAME, ATTR_APPLICATION_NAMES))) {
+            group = saturateGroupApplications(group);
+        }
+
         ConnectorObjectBuilder builder = convertGroupJSONObjectToConnectorObject(group);
 
         incompleteIfNecessary(options, ObjectClass.GROUP_NAME, ATTR_MEMBERS, builder);
         incompleteIfNecessary(options, ObjectClass.GROUP_NAME, ATTR_OWNERS, builder);
         incompleteIfNecessary(options, ObjectClass.GROUP_NAME, ATTR_MEMBER_OF_ROLE, builder);
+        if (!group.has(ATTR_APPLICATIONS)) {
+            incompleteIfNecessary(options, ObjectClass.GROUP_NAME, ATTR_APPLICATIONS, builder);
+            incompleteIfNecessary(options, ObjectClass.GROUP_NAME, ATTR_APPLICATION_NAMES, builder);
+        }
 
         final ConnectorObject connectorObject = builder.build();
         LOG.ok("handleJSONObject, group: {0}, \n\tconnectorObject: {1}", group.get("id"), connectorObject);
@@ -796,6 +1122,8 @@ public class GroupProcessing extends ObjectProcessing {
         getMultiIfExists(group, ATTR_MEMBERS, builder);
         getMultiIfExists(group, ATTR_OWNERS, builder);
         getMultiIfExists(group, ATTR_MEMBER_OF_ROLE, builder);
+        getMultiIfExists(group, ATTR_APPLICATIONS, builder);
+        getMultiIfExists(group, ATTR_APPLICATION_NAMES, builder);
 
         for (AttributeInfo extAttr : directoryExtensionSchema()) {
             if (extAttr.isMultiValued()) {

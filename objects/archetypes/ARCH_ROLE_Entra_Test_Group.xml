@@ -1,0 +1,43 @@
+<archetype xmlns="http://midpoint.evolveum.com/xml/ns/public/common/common-3" xmlns:c="http://midpoint.evolveum.com/xml/ns/public/common/common-3" xmlns:icfs="http://midpoint.evolveum.com/xml/ns/public/connector/icf-1/resource-schema-3" xmlns:org="http://midpoint.evolveum.com/xml/ns/public/common/org-3" xmlns:q="http://prism.evolveum.com/xml/ns/public/query-3" xmlns:ri="http://midpoint.evolveum.com/xml/ns/public/resource/instance-3" xmlns:t="http://prism.evolveum.com/xml/ns/public/types-3" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" oid="2d83df47-aa0e-4129-827d-70b53a884a4d">
+    <name>Role Archetype: Entra Group</name>
+    <description>Marks roles that represent an Entra group of the Entra test tenant, imported or created in midPoint.
+        Applied automatically by the Entra Test resource on import. Its object template (EntraTest Group) resolves
+        duplicate names through focus iteration and assigns the MR:RES:EntraTest:Group metarole, which provisions the
+        role as an Entra group and its holders as group members.</description>
+    <assignment>
+        <assignmentRelation>
+            <holderType>RoleType</holderType>
+        </assignmentRelation>
+    </assignment>
+    <displayName>
+        <t:orig>Entra Group</t:orig>
+        <t:norm>entra group</t:norm>
+        <t:lang>
+            <t:sk>Entra skupina</t:sk>
+        </t:lang>
+    </displayName>
+    <identifier>entra-test-group</identifier>
+    <archetypePolicy>
+        <display>
+            <label>
+                <t:orig>Entra Group</t:orig>
+                <t:norm>entra group</t:norm>
+                <t:lang>
+                    <t:sk>Entra skupina</t:sk>
+                </t:lang>
+            </label>
+            <pluralLabel>
+                <t:orig>Entra Groups</t:orig>
+                <t:norm>entra groups</t:norm>
+                <t:lang>
+                    <t:sk>Entra skupiny</t:sk>
+                </t:lang>
+            </pluralLabel>
+            <icon>
+                <cssClass>fa-solid fa-users</cssClass>
+                <color>blue</color>
+            </icon>
+        </display>
+        <objectTemplateRef oid="f63cdda3-4497-4a8e-8085-daf35b61c3b8" type="c:ObjectTemplateType"/>
+    </archetypePolicy>
+</archetype>

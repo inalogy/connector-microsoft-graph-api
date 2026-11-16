@@ -1,0 +1,45 @@
+<role xmlns="http://midpoint.evolveum.com/xml/ns/public/common/common-3" xmlns:c="http://midpoint.evolveum.com/xml/ns/public/common/common-3" xmlns:icfs="http://midpoint.evolveum.com/xml/ns/public/connector/icf-1/resource-schema-3" xmlns:org="http://midpoint.evolveum.com/xml/ns/public/common/org-3" xmlns:q="http://prism.evolveum.com/xml/ns/public/query-3" xmlns:ri="http://midpoint.evolveum.com/xml/ns/public/resource/instance-3" xmlns:t="http://prism.evolveum.com/xml/ns/public/types-3" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" oid="734dafcb-4e13-4274-9b56-40edb1401d13">
+    <name>MR:RES:EntraTest:Group</name>
+    <description>Metarole of every Entra Group role (assigned by the Entra Group object template). Order 1: the role
+        itself gets an Entra security group on the Entra Test resource. Order 2: every user holding the role gets the
+        group membership on their Entra account.</description>
+    <assignment>
+        <targetRef oid="00000000-0000-0000-0000-000000000320" relation="org:default" type="c:ArchetypeType"/>
+    </assignment>
+    <inducement>
+        <description>The Entra Group role is provisioned as an Entra security group.</description>
+        <construction>
+            <resourceRef oid="a5e35e85-3e32-40a8-92f8-68796f48955b" relation="org:default" type="c:ResourceType"/>
+            <kind>entitlement</kind>
+            <intent>group</intent>
+        </construction>
+        <focusType>RoleType</focusType>
+    </inducement>
+    <inducement>
+        <description>Users holding an Entra Group role become members of its Entra group.</description>
+        <construction>
+            <resourceRef oid="a5e35e85-3e32-40a8-92f8-68796f48955b" relation="org:default" type="c:ResourceType"/>
+            <kind>account</kind>
+            <intent>default</intent>
+            <association>
+                <ref>ri:groups</ref>
+                <outbound>
+                    <name>entra-test-group-membership</name>
+                    <description>Adds the user's Entra account to the Entra group linked to the role the user holds.</description>
+                    <strength>strong</strength>
+                    <expression>
+                        <associationFromLink>
+                            <projectionDiscriminator>
+                                <kind>entitlement</kind>
+                                <intent>group</intent>
+                            </projectionDiscriminator>
+                        </associationFromLink>
+                    </expression>
+                </outbound>
+            </association>
+        </construction>
+        <order>2</order>
+        <focusType>UserType</focusType>
+    </inducement>
+    <requestable>false</requestable>
+</role>

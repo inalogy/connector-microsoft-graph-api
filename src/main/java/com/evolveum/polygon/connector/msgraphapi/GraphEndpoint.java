@@ -356,10 +356,8 @@ public class GraphEndpoint {
             maxRetriesExceededMessage = "Maximum retry attempts '" + this.configuration.getPostCreateReadMaxRetryCount() + "' were exceeded!";
         }
 
-        String providerErrorCode = extractProviderErrorCode(responseBody);
-        String message = maxRetriesExceededMessage + "HTTP error " + statusCode + " "
-                + response.getStatusLine().getReasonPhrase()
-                + (providerErrorCode == null ? "" : " (provider code: " + providerErrorCode + ")");
+        String message = maxRetriesExceededMessage
+                + buildErrorMessage(statusCode, response.getStatusLine().getReasonPhrase(), responseBody);
         String classificationText = responseBody == null ? "" : responseBody;
         //LOG.error("{0}", message);
         if (statusCode == 400 && classificationText.contains("The client credentials are invalid")) {
@@ -414,17 +412,41 @@ public class GraphEndpoint {
         throw new ConnectorException(message);
     }
 
-    private String extractProviderErrorCode(String responseBody) {
+    static final int MAX_PROVIDER_MESSAGE_LENGTH = 500;
+
+    /**
+     * Builds the exception message for a failed Graph call: status, reason phrase, and, when the body is a Graph
+     * error object, its code and its human-readable message (on one line, capped at
+     * {@link #MAX_PROVIDER_MESSAGE_LENGTH} characters). Without the message, errors such as a rejected role
+     * assignment only show a generic code like Request_BadRequest.
+     */
+    static String buildErrorMessage(int statusCode, String reasonPhrase, String responseBody) {
+        StringBuilder message = new StringBuilder("HTTP error ").append(statusCode).append(" ").append(reasonPhrase);
+        JSONObject error = parseProviderError(responseBody);
+        if (error == null) {
+            return message.toString();
+        }
+        String code = error.optString("code", null);
+        if (!StringUtil.isBlank(code) && code.length() <= 128) {
+            message.append(" (provider code: ").append(code).append(")");
+        }
+        String providerMessage = error.optString("message", null);
+        if (!StringUtil.isBlank(providerMessage)) {
+            providerMessage = providerMessage.replaceAll("\\s+", " ").trim();
+            if (providerMessage.length() > MAX_PROVIDER_MESSAGE_LENGTH) {
+                providerMessage = providerMessage.substring(0, MAX_PROVIDER_MESSAGE_LENGTH) + "...";
+            }
+            message.append(": ").append(providerMessage);
+        }
+        return message.toString();
+    }
+
+    private static JSONObject parseProviderError(String responseBody) {
         if (StringUtil.isBlank(responseBody)) {
             return null;
         }
         try {
-            JSONObject error = new JSONObject(responseBody).optJSONObject("error");
-            if (error == null) {
-                return null;
-            }
-            String code = error.optString("code", null);
-            return StringUtil.isBlank(code) || code.length() > 128 ? null : code;
+            return new JSONObject(responseBody).optJSONObject("error");
         } catch (RuntimeException e) {
             return null;
         }
@@ -471,10 +493,35 @@ public class GraphEndpoint {
 
     }
 
+    /**
+     * True when a 404 from a roleAssignments request may be replication lag of a principal created moments ago, so
+     * the request is worth retrying. That only applies to requests filtered by principal. A 404 for a request
+     * filtered by role definition alone is final: Graph answers it for the default user roles (User, Guest User,
+     * Restricted Guest User), which have no explicit assignments.
+     */
+    static boolean isRetryableRoleAssignments404(URI uri) {
+        String query = uri == null ? null : uri.getQuery();
+        if (query == null) {
+            return true;
+        }
+        // Only the $filter clause counts: the member listing selects principalId but filters by role definition.
+        for (String parameter : query.split("&")) {
+            if (parameter.startsWith("$filter=")) {
+                return parameter.contains("principalId");
+            }
+        }
+        return true;
+    }
+
     private JSONObject roleAssignments(HttpRequestBase request) {
         int roleAssignmentsRetryCount = 0;
+        boolean retry404 = isRetryableRoleAssignments404(request.getURI());
         do {
             try (CloseableHttpResponse response = executeRequest(request,false)) {
+                if (response.getStatusLine().getStatusCode() == 404 && !retry404) {
+                    processResponseErrors(response, false);
+                    return null;
+                }
                 if (response.getStatusLine().getStatusCode() == 404) {
                     roleAssignmentsRetryCount++;
                     if (roleAssignmentsRetryCount >= this.configuration.getPostCreateReadMaxRetryCount()) {

@@ -34,3 +34,10 @@ target
 /src/test/resources/testProperties/propertiesForTestInternal.properties
 /.github/
 /.run/
+
+# Older Entra fork, kept locally as porting reference only
+ConnectorEntraFinal/
+
+# Local-only build and test settings (may contain tenant credentials)
+test.properties
+pom-local-build.xml

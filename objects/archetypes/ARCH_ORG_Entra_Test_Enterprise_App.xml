@@ -1,0 +1,42 @@
+<archetype xmlns="http://midpoint.evolveum.com/xml/ns/public/common/common-3" xmlns:c="http://midpoint.evolveum.com/xml/ns/public/common/common-3" xmlns:icfs="http://midpoint.evolveum.com/xml/ns/public/connector/icf-1/resource-schema-3" xmlns:org="http://midpoint.evolveum.com/xml/ns/public/common/org-3" xmlns:q="http://prism.evolveum.com/xml/ns/public/query-3" xmlns:ri="http://midpoint.evolveum.com/xml/ns/public/resource/instance-3" xmlns:t="http://prism.evolveum.com/xml/ns/public/types-3" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" oid="2b89648a-2925-45ee-8cfd-d9965e050d1c">
+    <name>Org Archetype: Entra Test Enterprise Application</name>
+    <description>Marks orgs that represent an Entra enterprise application (service principal) imported from the
+        Entra test tenant. Applied automatically by the Entra Test resource; carries the naming template that
+        resolves duplicate application names through focus iteration.</description>
+    <assignment>
+        <assignmentRelation>
+            <holderType>OrgType</holderType>
+        </assignmentRelation>
+    </assignment>
+    <displayName>
+        <t:orig>Entra enterprise application</t:orig>
+        <t:norm>entra enterprise application</t:norm>
+        <t:lang>
+            <t:sk>Entra podniková aplikácia</t:sk>
+        </t:lang>
+    </displayName>
+    <identifier>entra-test-enterprise-app</identifier>
+    <archetypePolicy>
+        <display>
+            <label>
+                <t:orig>Entra enterprise application</t:orig>
+                <t:norm>entra enterprise application</t:norm>
+                <t:lang>
+                    <t:sk>Entra podniková aplikácia</t:sk>
+                </t:lang>
+            </label>
+            <pluralLabel>
+                <t:orig>Entra enterprise applications</t:orig>
+                <t:norm>entra enterprise applications</t:norm>
+                <t:lang>
+                    <t:sk>Entra podnikové aplikácie</t:sk>
+                </t:lang>
+            </pluralLabel>
+            <icon>
+                <cssClass>fa-solid fa-cubes</cssClass>
+                <color>blue</color>
+            </icon>
+        </display>
+        <objectTemplateRef oid="3bf1a030-ecc5-473c-ab26-bc42b12d46b7" type="c:ObjectTemplateType"/>
+    </archetypePolicy>
+</archetype>

@@ -1,0 +1,49 @@
+<objectTemplate xmlns="http://midpoint.evolveum.com/xml/ns/public/common/common-3" xmlns:c="http://midpoint.evolveum.com/xml/ns/public/common/common-3" xmlns:icfs="http://midpoint.evolveum.com/xml/ns/public/connector/icf-1/resource-schema-3" xmlns:org="http://midpoint.evolveum.com/xml/ns/public/common/org-3" xmlns:q="http://prism.evolveum.com/xml/ns/public/query-3" xmlns:ri="http://midpoint.evolveum.com/xml/ns/public/resource/instance-3" xmlns:t="http://prism.evolveum.com/xml/ns/public/types-3" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" oid="3bf1a030-ecc5-473c-ab26-bc42b12d46b7">
+    <name>EntraTest All: Naming Template</name>
+    <description>Naming template for roles (Entra groups) and orgs (Entra enterprise applications) imported from the
+        Entra test tenant. Entra display names are not unique, so the object name is the display name plus an
+        iteration token that midPoint increases until the name is free. Referenced by the Entra test archetypes.</description>
+    <iterationSpecification>
+        <maxIterations>50</maxIterations>
+        <tokenExpression>
+            <script>
+                <code><![CDATA[
+return iteration == 0 ? '' : ' (' + basic.stringify(iteration) + ')'
+]]></code>
+            </script>
+        </tokenExpression>
+    </iterationSpecification>
+    <mapping>
+        <name>entra-test-unique-name</name>
+        <description>Sets the object name to the Entra display name, suffixed with the iteration token when that name is already taken.</description>
+        <documentation>Entra allows several groups or applications with the same display name (for example two
+            groups named secGroupPSTMAN), while midPoint names must be unique. The first object keeps the clean
+            display name; each further object with the same display name gets a numbered suffix such as " (1)".
+            Objects without a display name fall back to their Entra object id.</documentation>
+        <strength>strong</strength>
+        <source>
+            <path>displayName</path>
+        </source>
+        <source>
+            <path>identifier</path>
+        </source>
+        <expression>
+            <script>
+                <code><![CDATA[
+String base = basic.stringify(displayName)?.trim()
+                    if (!base) {
+                        base = basic.stringify(identifier)?.trim()
+                    }
+                    if (!base) {
+                        return null
+                    }
+                    String token = basic.stringify(iterationToken) ?: ''
+                    return base + token
+]]></code>
+            </script>
+        </expression>
+        <target>
+            <path>name</path>
+        </target>
+    </mapping>
+</objectTemplate>

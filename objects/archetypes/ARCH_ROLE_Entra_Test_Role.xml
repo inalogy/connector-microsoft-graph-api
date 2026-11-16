@@ -1,0 +1,43 @@
+<archetype xmlns="http://midpoint.evolveum.com/xml/ns/public/common/common-3" xmlns:c="http://midpoint.evolveum.com/xml/ns/public/common/common-3" xmlns:icfs="http://midpoint.evolveum.com/xml/ns/public/connector/icf-1/resource-schema-3" xmlns:org="http://midpoint.evolveum.com/xml/ns/public/common/org-3" xmlns:q="http://prism.evolveum.com/xml/ns/public/query-3" xmlns:ri="http://midpoint.evolveum.com/xml/ns/public/resource/instance-3" xmlns:t="http://prism.evolveum.com/xml/ns/public/types-3" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" oid="8a320ffe-4835-4499-bce9-62aa74bf66df">
+    <name>Role Archetype: Entra Role</name>
+    <description>Marks roles that represent an Entra directory role definition (CustomRoleObjectClass, for example
+        User, Global Administrator) imported read-only from the Entra test tenant. Applied automatically by the Entra
+        Test resource; carries the naming template that resolves duplicate names through focus iteration. Carries no
+        inducements, so it never provisions anything.</description>
+    <assignment>
+        <assignmentRelation>
+            <holderType>RoleType</holderType>
+        </assignmentRelation>
+    </assignment>
+    <displayName>
+        <t:orig>Entra Role</t:orig>
+        <t:norm>entra role</t:norm>
+        <t:lang>
+            <t:sk>Entra rola</t:sk>
+        </t:lang>
+    </displayName>
+    <identifier>entra-test-role</identifier>
+    <archetypePolicy>
+        <display>
+            <label>
+                <t:orig>Entra Role</t:orig>
+                <t:norm>entra role</t:norm>
+                <t:lang>
+                    <t:sk>Entra rola</t:sk>
+                </t:lang>
+            </label>
+            <pluralLabel>
+                <t:orig>Entra Roles</t:orig>
+                <t:norm>entra roles</t:norm>
+                <t:lang>
+                    <t:sk>Entra roly</t:sk>
+                </t:lang>
+            </pluralLabel>
+            <icon>
+                <cssClass>fa-solid fa-user-shield</cssClass>
+                <color>blue</color>
+            </icon>
+        </display>
+        <objectTemplateRef oid="3bf1a030-ecc5-473c-ab26-bc42b12d46b7" type="c:ObjectTemplateType"/>
+    </archetypePolicy>
+</archetype>

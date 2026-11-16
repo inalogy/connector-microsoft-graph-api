@@ -1,0 +1,987 @@
+<resource xmlns="http://midpoint.evolveum.com/xml/ns/public/common/common-3" xmlns:c="http://midpoint.evolveum.com/xml/ns/public/common/common-3" xmlns:icfs="http://midpoint.evolveum.com/xml/ns/public/connector/icf-1/resource-schema-3" xmlns:org="http://midpoint.evolveum.com/xml/ns/public/common/org-3" xmlns:q="http://prism.evolveum.com/xml/ns/public/query-3" xmlns:ri="http://midpoint.evolveum.com/xml/ns/public/resource/instance-3" xmlns:t="http://prism.evolveum.com/xml/ns/public/types-3" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" oid="a5e35e85-3e32-40a8-92f8-68796f48955b">
+    <name>Entra Test</name>
+    <description>Test resource for the MsGraph connector build against a real Entra test tenant. Inbound:
+        enterprise applications are imported as orgs under "Enterprise Applications", groups as
+        roles (Entra Group archetype) assigned to the application orgs they are granted to, directory role
+        definitions as roles (Entra Role archetype), and users as users holding the roles of their groups and
+        directory roles. Outbound (Entra groups only, via MR:RES:EntraTest:Group): an Entra Group role created in
+        midPoint creates an Entra security group (name, mailNickname, type set on create only), the group is assigned
+        to the enterprise applications whose orgs the role is assigned to, and role holders become group members.
+        Enterprise applications, directory roles and user attributes stay inbound only. Group members and application
+        assignments are fetched explicitly.</description>
+    <subtype>com.evolveum.polygon.connector.msgraphapi.MSGraphConnector</subtype>
+    <lifecycleState>active</lifecycleState>
+    <connectorRef type="c:ConnectorType">
+        <filter>
+            <q:equal>
+                <q:path>c:connectorType</q:path>
+                <q:value>com.evolveum.polygon.connector.msgraphapi.MSGraphConnector</q:value>
+            </q:equal>
+        </filter>
+    </connectorRef>
+    <connectorConfiguration xmlns:icfc="http://midpoint.evolveum.com/xml/ns/public/connector/icf-1/connector-schema-3">
+        <icfc:configurationProperties xmlns:gen932="http://midpoint.evolveum.com/xml/ns/public/connector/icf-1/bundle/com.evolveum.polygon.connector-msgraph/com.evolveum.polygon.connector.msgraphapi.MSGraphConnector">
+            <gen932:clientId>$(customer.entra.test.token.value)</gen932:clientId>
+            <gen932:clientSecret>
+                <t:encryptedData>
+                    <t:encryptionMethod>
+                        <t:algorithm>http://www.w3.org/2001/04/xmlenc#aes256-cbc</t:algorithm>
+                    </t:encryptionMethod>
+                    <t:keyInfo>
+                        <t:keyName>$(customer.entra.test.token.secret.keyName)</t:keyName>
+                    </t:keyInfo>
+                    <t:cipherData>
+                        <t:cipherValue>$(customer.entra.test.token.secret.cipherValue)</t:cipherValue>
+                    </t:cipherData>
+                </t:encryptedData>
+            </gen932:clientSecret>
+            <gen932:tenantId>$(customer.entra.test.tenantId)</gen932:tenantId>
+            <gen932:validateWithFailoverTrust>true</gen932:validateWithFailoverTrust>
+            <gen932:pathToFailoverTrustStore>/usr/lib/jvm/java-21-openjdk-amd64/lib/security/cacerts</gen932:pathToFailoverTrustStore>
+            <gen932:throttlingRetryCount>3</gen932:throttlingRetryCount>
+            <gen932:throttlingRetryWait>10</gen932:throttlingRetryWait>
+            <gen932:pageSize>100</gen932:pageSize>
+            <gen932:ignorePersonalSites>true</gen932:ignorePersonalSites>
+            <gen932:expectedPropertyNames>Name,Title,TitleLink</gen932:expectedPropertyNames>
+            <gen932:discoverSchema>false</gen932:discoverSchema>
+        </icfc:configurationProperties>
+        <icfc:resultsHandlerConfiguration>
+            <icfc:enableNormalizingResultsHandler>false</icfc:enableNormalizingResultsHandler>
+            <icfc:enableFilteredResultsHandler>false</icfc:enableFilteredResultsHandler>
+            <icfc:enableAttributesToGetSearchResultsHandler>false</icfc:enableAttributesToGetSearchResultsHandler>
+        </icfc:resultsHandlerConfiguration>
+    </connectorConfiguration>
+    <schemaHandling>
+        <objectType>
+            <kind>account</kind>
+            <intent>default</intent>
+            <displayName>Users</displayName>
+            <description>Entra users imported as midPoint users. Membership in groups is read through the account's memberOfGroup.</description>
+            <default>true</default>
+            <delineation>
+                <objectClass>ri:AccountObjectClass</objectClass>
+            </delineation>
+            <focus>
+                <type>UserType</type>
+            </focus>
+            <attribute>
+                <ref>icfs:name</ref>
+                <inbound>
+                    <name>entra-user-name</name>
+                    <description>Sets the user name from the Entra userPrincipalName.</description>
+                    <documentation>The userPrincipalName is unique in the tenant and is the login of the person, so it
+                        becomes the midPoint user name and is also the correlation key.</documentation>
+                    <strength>strong</strength>
+                    <target>
+                        <path>name</path>
+                    </target>
+                </inbound>
+            </attribute>
+            <attribute>
+                <ref>ri:givenName</ref>
+                <inbound>
+                    <name>entra-user-givenName</name>
+                    <description>Sets the user's given name from the Entra givenName.</description>
+                    <documentation>Entra is authoritative for the given name of the imported test users.</documentation>
+                    <strength>strong</strength>
+                    <target>
+                        <path>givenName</path>
+                    </target>
+                </inbound>
+            </attribute>
+            <attribute>
+                <ref>ri:surname</ref>
+                <inbound>
+                    <name>entra-user-familyName</name>
+                    <description>Sets the user's family name from the Entra surname.</description>
+                    <documentation>Entra is authoritative for the family name of the imported test users.</documentation>
+                    <strength>strong</strength>
+                    <target>
+                        <path>familyName</path>
+                    </target>
+                </inbound>
+            </attribute>
+            <attribute>
+                <ref>ri:displayName</ref>
+                <inbound>
+                    <name>entra-user-fullName</name>
+                    <description>Sets the user's full name from the Entra displayName.</description>
+                    <documentation>The display name shown in Entra is used as the person's full name in midPoint.</documentation>
+                    <strength>strong</strength>
+                    <target>
+                        <path>fullName</path>
+                    </target>
+                </inbound>
+            </attribute>
+            <attribute>
+                <ref>ri:mail</ref>
+                <inbound>
+                    <name>entra-user-emailAddress</name>
+                    <description>Sets the user's e-mail address from the Entra mail attribute.</description>
+                    <documentation>The primary Entra mailbox address is the user's e-mail address in midPoint.</documentation>
+                    <strength>strong</strength>
+                    <target>
+                        <path>emailAddress</path>
+                    </target>
+                </inbound>
+            </attribute>
+            <attribute>
+                <ref>ri:accountEnabled</ref>
+                <inbound>
+                    <name>entra-user-administrativeStatus</name>
+                    <description>Sets the user's administrative status from the Entra accountEnabled flag.</description>
+                    <documentation>An Entra account that is enabled makes the midPoint user enabled; a disabled Entra
+                        account makes the user disabled. When Entra does not report the flag the status is left
+                        unset.</documentation>
+                    <strength>strong</strength>
+                    <expression>
+                        <script>
+                            <code><![CDATA[
+import com.evolveum.midpoint.xml.ns._public.common.common_3.ActivationStatusType
+
+                                String enabled = basic.stringify(input)?.trim()?.toLowerCase()
+                                if (!enabled) {
+                                    return null
+                                }
+                                return enabled == 'true' ? ActivationStatusType.ENABLED : ActivationStatusType.DISABLED
+]]></code>
+                        </script>
+                    </expression>
+                    <target>
+                        <path>activation/administrativeStatus</path>
+                    </target>
+                </inbound>
+            </attribute>
+            <attribute>
+                <ref>ri:memberOfGroup</ref>
+                <fetchStrategy>explicit</fetchStrategy>
+                <inbound>
+                    <name>entra-user-group-role-assignment</name>
+                    <description>Assigns the user every imported Entra group role whose identifier is one of the group ids the account is member of.</description>
+                    <documentation>A user who is a member of an Entra group holds the midPoint role that represents
+                        that group. Groups that were not imported yet produce no assignment; roles are never created
+                        on demand from a user import. When the user already holds the role through an assignment made
+                        in midPoint (no entra-test-group subtype), no second, tagged assignment is created: the
+                        membership already has a midPoint source. Evaluated only when synchronizing from Entra
+                        (import, reconciliation, live sync), never during a change made in midPoint: otherwise
+                        removing a role in midPoint would be undone in the same operation by the membership Entra
+                        still reports, before the removal reaches Entra.</documentation>
+                    <strength>strong</strength>
+                    <channel>http://midpoint.evolveum.com/xml/ns/public/common/channels-3#import</channel>
+                    <channel>http://midpoint.evolveum.com/xml/ns/public/common/channels-3#reconciliation</channel>
+                    <channel>http://midpoint.evolveum.com/xml/ns/public/common/channels-3#liveSync</channel>
+                    <expression>
+                        <privileges>
+                            <runPrivileged>true</runPrivileged>
+                        </privileges>
+                        <script>
+                            <code><![CDATA[
+import com.evolveum.midpoint.prism.query.ObjectQuery
+import com.evolveum.midpoint.xml.ns._public.common.common_3.AssignmentType
+import com.evolveum.midpoint.xml.ns._public.common.common_3.ObjectReferenceType
+import com.evolveum.midpoint.xml.ns._public.common.common_3.RoleType
+
+String GROUP_ARCHETYPE = '2d83df47-aa0e-4129-827d-70b53a884a4d'
+String SUBTYPE = 'entra-test-group'
+
+String groupId = basic.stringify(input)?.trim()
+if (!groupId) {
+    return null
+}
+ObjectQuery query = prismContext.queryFor(RoleType.class)
+        .item(RoleType.F_IDENTIFIER).eq(groupId)
+        .and().item(RoleType.F_ARCHETYPE_REF).ref(GROUP_ARCHETYPE)
+        .build()
+List<RoleType> roles = midpoint.searchObjects(RoleType.class, query)
+if (roles?.size() != 1) {
+    return null
+}
+String roleOid = roles[0].getOid()
+boolean assignedInMidpoint = focus?.getAssignment()?.any { AssignmentType a ->
+    a?.getTargetRef()?.getOid() == roleOid && !a.getSubtype().contains(SUBTYPE)
+} ?: false
+if (assignedInMidpoint) {
+    return null
+}
+AssignmentType assignment = new AssignmentType()
+assignment.setTargetRef(new ObjectReferenceType().oid(roleOid).type(RoleType.COMPLEX_TYPE))
+assignment.getSubtype().add(SUBTYPE)
+return assignment
+]]></code>
+                        </script>
+                    </expression>
+                    <target>
+                        <path>assignment</path>
+                        <set>
+                            <condition>
+                                <script>
+                                    <code><![CDATA[
+return assignment?.subtype?.contains('entra-test-group') ?: false
+]]></code>
+                                </script>
+                            </condition>
+                        </set>
+                    </target>
+                </inbound>
+            </attribute>
+            <attribute>
+                <ref>ri:memberOfRole</ref>
+                <fetchStrategy>explicit</fetchStrategy>
+                <inbound>
+                    <name>entra-user-directory-role-assignment</name>
+                    <description>Assigns the user every imported Entra directory role whose identifier is one of the role definition ids the account holds.</description>
+                    <documentation>A user with an active Entra directory role assignment holds the midPoint role that
+                        represents that role definition. Only direct, active role assignments are reported by Entra;
+                        the implicit default "User" role of every member user is not. Roles that were not imported
+                        yet produce no assignment; roles are never created on demand. When the user already holds
+                        the role through an assignment made in midPoint (no entra-test-role subtype), no second,
+                        tagged assignment is created. Evaluated only when synchronizing from Entra (import,
+                        reconciliation, live sync), never during a change made in midPoint, so that removing a role
+                        in midPoint is not undone by the stale role assignment Entra still reports.</documentation>
+                    <strength>strong</strength>
+                    <channel>http://midpoint.evolveum.com/xml/ns/public/common/channels-3#import</channel>
+                    <channel>http://midpoint.evolveum.com/xml/ns/public/common/channels-3#reconciliation</channel>
+                    <channel>http://midpoint.evolveum.com/xml/ns/public/common/channels-3#liveSync</channel>
+                    <expression>
+                        <privileges>
+                            <runPrivileged>true</runPrivileged>
+                        </privileges>
+                        <script>
+                            <code><![CDATA[
+import com.evolveum.midpoint.prism.query.ObjectQuery
+import com.evolveum.midpoint.xml.ns._public.common.common_3.AssignmentType
+import com.evolveum.midpoint.xml.ns._public.common.common_3.ObjectReferenceType
+import com.evolveum.midpoint.xml.ns._public.common.common_3.RoleType
+
+String ROLE_ARCHETYPE = '8a320ffe-4835-4499-bce9-62aa74bf66df'
+String SUBTYPE = 'entra-test-role'
+
+String roleDefinitionId = basic.stringify(input)?.trim()
+if (!roleDefinitionId) {
+    return null
+}
+ObjectQuery query = prismContext.queryFor(RoleType.class)
+        .item(RoleType.F_IDENTIFIER).eq(roleDefinitionId)
+        .and().item(RoleType.F_ARCHETYPE_REF).ref(ROLE_ARCHETYPE)
+        .build()
+List<RoleType> roles = midpoint.searchObjects(RoleType.class, query)
+if (roles?.size() != 1) {
+    return null
+}
+String roleOid = roles[0].getOid()
+boolean assignedInMidpoint = focus?.getAssignment()?.any { AssignmentType a ->
+    a?.getTargetRef()?.getOid() == roleOid && !a.getSubtype().contains(SUBTYPE)
+} ?: false
+if (assignedInMidpoint) {
+    return null
+}
+AssignmentType assignment = new AssignmentType()
+assignment.setTargetRef(new ObjectReferenceType().oid(roleOid).type(RoleType.COMPLEX_TYPE))
+assignment.getSubtype().add(SUBTYPE)
+return assignment
+]]></code>
+                        </script>
+                    </expression>
+                    <target>
+                        <path>assignment</path>
+                        <set>
+                            <condition>
+                                <script>
+                                    <code><![CDATA[
+return assignment?.subtype?.contains('entra-test-role') ?: false
+]]></code>
+                                </script>
+                            </condition>
+                        </set>
+                    </target>
+                </inbound>
+            </attribute>
+            <association>
+                <ref>ri:groups</ref>
+                <displayName>Groups</displayName>
+                <description>Entra group membership (read only; resolved to role assignments by the memberOfGroup inbound).</description>
+                <tolerant>true</tolerant>
+                <fetchStrategy>explicit</fetchStrategy>
+                <kind>entitlement</kind>
+                <intent>group</intent>
+                <direction>objectToSubject</direction>
+                <associationAttribute>ri:members</associationAttribute>
+                <valueAttribute>icfs:uid</valueAttribute>
+                <shortcutAssociationAttribute>ri:memberOfGroup</shortcutAssociationAttribute>
+                <shortcutValueAttribute>icfs:uid</shortcutValueAttribute>
+                <explicitReferentialIntegrity>false</explicitReferentialIntegrity>
+            </association>
+            <association>
+                <ref>ri:directoryRoles</ref>
+                <displayName>Directory roles</displayName>
+                <description>Entra directory role assignments at tenant scope. Written by the order-2 inducement of
+                    MR:RES:EntraTest:DirectoryRole through the role's members (one roleAssignment per principal); read
+                    back through the memberOfRole inbound.</description>
+                <tolerant>true</tolerant>
+                <fetchStrategy>explicit</fetchStrategy>
+                <kind>entitlement</kind>
+                <intent>directoryrole</intent>
+                <direction>objectToSubject</direction>
+                <associationAttribute>ri:members</associationAttribute>
+                <valueAttribute>icfs:uid</valueAttribute>
+                <shortcutAssociationAttribute>ri:memberOfRole</shortcutAssociationAttribute>
+                <shortcutValueAttribute>icfs:uid</shortcutValueAttribute>
+                <explicitReferentialIntegrity>false</explicitReferentialIntegrity>
+            </association>
+            <activation>
+                <existence>
+                    <outbound>
+                        <name>entra-user-keep-account</name>
+                        <description>Keeps the Entra account for as long as the user exists in midPoint.</description>
+                        <documentation>The account construction comes only from Entra group roles (order 2 of
+                            MR:RES:EntraTest:Group). Under relative enforcement, removing the last such role would make
+                            the account illegal and delete it; this mapping makes the account legal whenever the user
+                            exists, so losing a group role only removes the membership.</documentation>
+                        <strength>weak</strength>
+                        <expression>
+                            <path>$focusExists</path>
+                        </expression>
+                    </outbound>
+                </existence>
+            </activation>
+            <correlation>
+                <correlators>
+                    <filter>
+                        <name>entra-user-by-upn</name>
+                        <description>Matches the account to the user whose name equals the Entra userPrincipalName.</description>
+                        <documentation>The user name is the UPN (see entra-user-name), so an exact name match is the
+                            only correlation rule needed for the test tenant.</documentation>
+                        <ownerFilter>
+                            <q:equal>
+                                <q:path>name</q:path>
+                                <expression>
+                                    <path>$shadow/attributes/icfs:name</path>
+                                </expression>
+                            </q:equal>
+                        </ownerFilter>
+                    </filter>
+                </correlators>
+            </correlation>
+            <synchronization>
+                <reaction>
+                    <name>unmatched -&gt; addFocus</name>
+                    <situation>unmatched</situation>
+                    <actions>
+                        <addFocus/>
+                    </actions>
+                </reaction>
+                <reaction>
+                    <name>unlinked -&gt; link</name>
+                    <situation>unlinked</situation>
+                    <actions>
+                        <link/>
+                    </actions>
+                </reaction>
+                <reaction>
+                    <name>linked -&gt; synchronize</name>
+                    <situation>linked</situation>
+                    <actions>
+                        <synchronize/>
+                    </actions>
+                </reaction>
+                <reaction>
+                    <name>deleted -&gt; unlink</name>
+                    <situation>deleted</situation>
+                    <actions>
+                        <unlink/>
+                    </actions>
+                </reaction>
+            </synchronization>
+        </objectType>
+        <objectType>
+            <kind>entitlement</kind>
+            <intent>group</intent>
+            <displayName>Groups</displayName>
+            <description>Entra groups imported as roles, with their members and the enterprise applications they are assigned to.</description>
+            <default>true</default>
+            <delineation>
+                <objectClass>ri:GroupObjectClass</objectClass>
+            </delineation>
+            <focus>
+                <type>RoleType</type>
+                <archetypeRef oid="2d83df47-aa0e-4129-827d-70b53a884a4d" type="c:ArchetypeType"/>
+            </focus>
+            <attribute>
+                <ref>icfs:uid</ref>
+                <inbound>
+                    <name>entra-group-identifier</name>
+                    <description>Sets the role identifier to the Entra group object id.</description>
+                    <documentation>The Entra object id is the stable, unique key of a group; it is the correlation key
+                        and the value that user memberships refer to.</documentation>
+                    <strength>strong</strength>
+                    <target>
+                        <path>identifier</path>
+                    </target>
+                </inbound>
+            </attribute>
+            <attribute>
+                <ref>icfs:name</ref>
+                <outbound>
+                    <name>entra-group-out-name</name>
+                    <description>Sets the ConnId name of a new Entra group to the role display name, or the role name when it has none.</description>
+                    <documentation>midPoint requires icfs:name on create; the connector ignores it for groups and uses
+                        displayName instead (see entra-group-out-displayName). Weak: only applies on create.</documentation>
+                    <strength>weak</strength>
+                    <source>
+                        <path>$focus/displayName</path>
+                    </source>
+                    <source>
+                        <path>$focus/name</path>
+                    </source>
+                    <expression>
+                        <script>
+                            <code><![CDATA[
+return basic.stringify(displayName)?.trim() ?: basic.stringify(name)?.trim()
+]]></code>
+                        </script>
+                    </expression>
+                </outbound>
+            </attribute>
+            <attribute>
+                <ref>ri:displayName</ref>
+                <outbound>
+                    <name>entra-group-out-displayName</name>
+                    <description>Sets the display name of a new Entra group to the role display name, or the role name when it has none.</description>
+                    <documentation>Weak: midPoint names the group when it creates it, while Entra stays authoritative
+                        for the name afterwards (the strong inbound entra-group-displayName). Groups that already
+                        exist in Entra are never renamed by midPoint.</documentation>
+                    <strength>weak</strength>
+                    <source>
+                        <path>$focus/displayName</path>
+                    </source>
+                    <source>
+                        <path>$focus/name</path>
+                    </source>
+                    <expression>
+                        <script>
+                            <code><![CDATA[
+return basic.stringify(displayName)?.trim() ?: basic.stringify(name)?.trim()
+]]></code>
+                        </script>
+                    </expression>
+                </outbound>
+                <inbound>
+                    <name>entra-group-displayName</name>
+                    <description>Sets the role display name from the Entra group displayName.</description>
+                    <documentation>The Entra display name is shown as the role display name. The unique role name is
+                        derived from it by the Entra test naming template, whose iteration resolves duplicate names.</documentation>
+                    <strength>strong</strength>
+                    <target>
+                        <path>displayName</path>
+                    </target>
+                </inbound>
+            </attribute>
+            <attribute>
+                <ref>ri:mailNickname</ref>
+                <outbound>
+                    <name>entra-group-out-mailNickname</name>
+                    <description>Derives the mail nickname of a new Entra group from the role display name or name.</description>
+                    <documentation>Graph requires mailNickname on create even for security groups that are not
+                        mail-enabled. Allowed are ASCII letters, digits and . - _ only, at most 64 characters, so
+                        every other character becomes a dash. Weak: set on create only.</documentation>
+                    <strength>weak</strength>
+                    <source>
+                        <path>$focus/displayName</path>
+                    </source>
+                    <source>
+                        <path>$focus/name</path>
+                    </source>
+                    <expression>
+                        <script>
+                            <code><![CDATA[
+import java.text.Normalizer
+
+String base = basic.stringify(displayName)?.trim() ?: basic.stringify(name)?.trim()
+if (!base) {
+    return null
+}
+// strip diacritics only (basic.norm would also drop the dashes)
+String ascii = Normalizer.normalize(base, Normalizer.Form.NFD).replaceAll('\\p{M}', '')
+String nick = ascii.replaceAll('[^A-Za-z0-9._-]+', '-').replaceAll('^[-.]+|[-.]+$', '')
+if (nick.length() > 64) {
+    nick = nick.substring(0, 64)
+}
+return nick ?: null
+]]></code>
+                        </script>
+                    </expression>
+                </outbound>
+            </attribute>
+            <attribute>
+                <ref>ri:securityEnabled</ref>
+                <outbound>
+                    <name>entra-group-out-securityEnabled</name>
+                    <description>Creates every Entra group as a security group.</description>
+                    <documentation>Only security groups can be assigned to enterprise applications. Weak: set on
+                        create only, existing groups keep their type.</documentation>
+                    <strength>weak</strength>
+                    <expression>
+                        <value>true</value>
+                    </expression>
+                </outbound>
+            </attribute>
+            <attribute>
+                <ref>ri:mailEnabled</ref>
+                <outbound>
+                    <name>entra-group-out-mailEnabled</name>
+                    <description>Creates every Entra group without a mailbox.</description>
+                    <documentation>Graph cannot create mail-enabled security groups; it requires mailEnabled=false
+                        for them. Weak: set on create only.</documentation>
+                    <strength>weak</strength>
+                    <expression>
+                        <value>false</value>
+                    </expression>
+                </outbound>
+            </attribute>
+            <attribute>
+                <ref>ri:description</ref>
+                <outbound>
+                    <name>entra-group-out-description</name>
+                    <description>Sets the description of a new Entra group from the role description.</description>
+                    <documentation>Weak: set on create only; Entra stays authoritative afterwards (strong inbound
+                        entra-group-description). Line breaks and indentation (e.g. from a role written as XML) are
+                        collapsed into single spaces, because Entra shows the description as one line.</documentation>
+                    <strength>weak</strength>
+                    <source>
+                        <path>$focus/description</path>
+                    </source>
+                    <expression>
+                        <script>
+                            <code><![CDATA[
+String text = basic.stringify(description)?.replaceAll('\\s+', ' ')?.trim()
+return text ?: null
+]]></code>
+                        </script>
+                    </expression>
+                </outbound>
+                <inbound>
+                    <name>entra-group-description</name>
+                    <description>Sets the role description from the Entra group description.</description>
+                    <documentation>Entra is authoritative for the description of the imported group roles.</documentation>
+                    <strength>strong</strength>
+                    <target>
+                        <path>description</path>
+                    </target>
+                </inbound>
+            </attribute>
+            <attribute>
+                <ref>ri:members</ref>
+                <fetchStrategy>explicit</fetchStrategy>
+            </attribute>
+            <attribute>
+                <ref>ri:applications</ref>
+                <displayName>Applications</displayName>
+                <description>Object ids of the enterprise applications the group is assigned to.</description>
+                <fetchStrategy>explicit</fetchStrategy>
+                <outbound>
+                    <name>entra-group-out-applications</name>
+                    <description>Assigns the Entra group to every enterprise application whose org the role is assigned to.</description>
+                    <documentation>A role placed under an enterprise application org (an assignment to an org with
+                        the Entra enterprise application archetype) grants its group access to that application: the
+                        value is the org identifier, which is the service principal object id. Evaluated per
+                        assignment, so removing the role from the org removes the group from the application. Other
+                        application assignments that exist only in Entra are kept (tolerant attribute).</documentation>
+                    <strength>strong</strength>
+                    <source>
+                        <path>$focus/assignment</path>
+                    </source>
+                    <expression>
+                        <privileges>
+                            <runPrivileged>true</runPrivileged>
+                        </privileges>
+                        <script>
+                            <code><![CDATA[
+import com.evolveum.midpoint.xml.ns._public.common.common_3.OrgType
+
+String APP_ARCHETYPE = '2b89648a-2925-45ee-8cfd-d9965e050d1c'
+
+String orgOid = assignment?.targetRef?.oid
+if (!orgOid || assignment?.targetRef?.type?.localPart != 'OrgType') {
+    return null
+}
+OrgType org = midpoint.getObject(OrgType.class, orgOid)
+if (!org?.archetypeRef?.any { it?.oid == APP_ARCHETYPE }) {
+    return null
+}
+return basic.stringify(org?.identifier)?.trim() ?: null
+]]></code>
+                        </script>
+                    </expression>
+                </outbound>
+                <inbound>
+                    <name>entra-group-application-org-assignment</name>
+                    <description>Assigns the role to every imported enterprise application org whose identifier is one of the application ids the group is assigned to.</description>
+                    <documentation>A group that is assigned to an Entra enterprise application becomes a member of
+                        the org representing that application, so the org tree shows which groups grant access to
+                        which application. Applications that were not imported yet produce no assignment; orgs are
+                        never created on demand. When the role is already placed under the application org by an
+                        assignment made in midPoint (no entra-test-application subtype), no second, tagged assignment
+                        is created. Evaluated only when synchronizing from Entra (import, reconciliation, live sync),
+                        never during a change made in midPoint, so that removing the role from the application org in
+                        midPoint is not undone before the removal reaches Entra.</documentation>
+                    <strength>strong</strength>
+                    <channel>http://midpoint.evolveum.com/xml/ns/public/common/channels-3#import</channel>
+                    <channel>http://midpoint.evolveum.com/xml/ns/public/common/channels-3#reconciliation</channel>
+                    <channel>http://midpoint.evolveum.com/xml/ns/public/common/channels-3#liveSync</channel>
+                    <expression>
+                        <privileges>
+                            <runPrivileged>true</runPrivileged>
+                        </privileges>
+                        <script>
+                            <code><![CDATA[
+import com.evolveum.midpoint.prism.query.ObjectQuery
+import com.evolveum.midpoint.xml.ns._public.common.common_3.AssignmentType
+import com.evolveum.midpoint.xml.ns._public.common.common_3.ObjectReferenceType
+import com.evolveum.midpoint.xml.ns._public.common.common_3.OrgType
+
+String APP_ARCHETYPE = '2b89648a-2925-45ee-8cfd-d9965e050d1c'
+String SUBTYPE = 'entra-test-application'
+
+String applicationId = basic.stringify(input)?.trim()
+if (!applicationId) {
+    return null
+}
+ObjectQuery query = prismContext.queryFor(OrgType.class)
+        .item(OrgType.F_IDENTIFIER).eq(applicationId)
+        .and().item(OrgType.F_ARCHETYPE_REF).ref(APP_ARCHETYPE)
+        .build()
+List<OrgType> orgs = midpoint.searchObjects(OrgType.class, query)
+if (orgs?.size() != 1) {
+    return null
+}
+String orgOid = orgs[0].getOid()
+boolean assignedInMidpoint = focus?.getAssignment()?.any { AssignmentType a ->
+    a?.getTargetRef()?.getOid() == orgOid && !a.getSubtype().contains(SUBTYPE)
+} ?: false
+if (assignedInMidpoint) {
+    return null
+}
+AssignmentType assignment = new AssignmentType()
+assignment.setTargetRef(new ObjectReferenceType().oid(orgOid).type(OrgType.COMPLEX_TYPE))
+assignment.getSubtype().add(SUBTYPE)
+return assignment
+]]></code>
+                        </script>
+                    </expression>
+                    <target>
+                        <path>assignment</path>
+                        <set>
+                            <condition>
+                                <script>
+                                    <code><![CDATA[
+return assignment?.subtype?.contains('entra-test-application') ?: false
+]]></code>
+                                </script>
+                            </condition>
+                        </set>
+                    </target>
+                </inbound>
+            </attribute>
+            <attribute>
+                <ref>ri:applicationNames</ref>
+                <displayName>Application names</displayName>
+                <description>Display names of the enterprise applications the group is assigned to.</description>
+                <fetchStrategy>explicit</fetchStrategy>
+            </attribute>
+            <activation>
+                <existence>
+                    <outbound>
+                        <name>entra-group-keep-group</name>
+                        <description>Keeps the Entra group for as long as its role exists in midPoint.</description>
+                        <documentation>The group construction comes from the metarole assignment. Losing that
+                            assignment must not delete the Entra group; only deleting the role itself does.</documentation>
+                        <strength>weak</strength>
+                        <expression>
+                            <path>$focusExists</path>
+                        </expression>
+                    </outbound>
+                </existence>
+            </activation>
+            <correlation>
+                <correlators>
+                    <filter>
+                        <name>entra-group-by-object-id</name>
+                        <description>Matches the group to the role whose identifier equals the Entra group object id.</description>
+                        <documentation>Group display names are not unique in the tenant, so only the immutable object
+                            id is used for correlation.</documentation>
+                        <ownerFilter>
+                            <q:equal>
+                                <q:path>identifier</q:path>
+                                <expression>
+                                    <path>$shadow/attributes/icfs:uid</path>
+                                </expression>
+                            </q:equal>
+                        </ownerFilter>
+                    </filter>
+                </correlators>
+            </correlation>
+            <synchronization>
+                <reaction>
+                    <name>unmatched -&gt; addFocus</name>
+                    <situation>unmatched</situation>
+                    <actions>
+                        <addFocus/>
+                    </actions>
+                </reaction>
+                <reaction>
+                    <name>unlinked -&gt; link</name>
+                    <situation>unlinked</situation>
+                    <actions>
+                        <link/>
+                    </actions>
+                </reaction>
+                <reaction>
+                    <name>linked -&gt; synchronize</name>
+                    <situation>linked</situation>
+                    <actions>
+                        <synchronize/>
+                    </actions>
+                </reaction>
+                <reaction>
+                    <name>deleted -&gt; unlink</name>
+                    <situation>deleted</situation>
+                    <actions>
+                        <unlink/>
+                    </actions>
+                </reaction>
+            </synchronization>
+        </objectType>
+        <objectType>
+            <kind>entitlement</kind>
+            <intent>directoryrole</intent>
+            <displayName>Directory roles</displayName>
+            <description>Entra directory role definitions (User, Global Administrator, ...) imported as roles with the Entra Role archetype.</description>
+            <default>false</default>
+            <delineation>
+                <objectClass>ri:CustomRoleObjectClass</objectClass>
+            </delineation>
+            <focus>
+                <type>RoleType</type>
+                <archetypeRef oid="8a320ffe-4835-4499-bce9-62aa74bf66df" type="c:ArchetypeType"/>
+            </focus>
+            <attribute>
+                <ref>icfs:uid</ref>
+                <inbound>
+                    <name>entra-role-identifier</name>
+                    <description>Sets the role identifier to the Entra role definition id.</description>
+                    <documentation>The role definition id is stable and unique (for built-in roles it equals the
+                        template id); it is the correlation key and the value user memberOfRole refers to.</documentation>
+                    <strength>strong</strength>
+                    <target>
+                        <path>identifier</path>
+                    </target>
+                </inbound>
+            </attribute>
+            <attribute>
+                <ref>icfs:name</ref>
+                <inbound>
+                    <name>entra-role-displayName</name>
+                    <description>Sets the role display name from the Entra role definition displayName.</description>
+                    <documentation>The Entra display name is shown as the role display name. The unique role name is
+                        derived from it by the Entra test naming template, whose iteration resolves names already
+                        taken by other roles (for example an Entra group with the same name).</documentation>
+                    <strength>strong</strength>
+                    <target>
+                        <path>displayName</path>
+                    </target>
+                </inbound>
+            </attribute>
+            <attribute>
+                <ref>ri:description</ref>
+                <inbound>
+                    <name>entra-role-description</name>
+                    <description>Sets the role description from the Entra role definition description.</description>
+                    <documentation>Entra is authoritative for the description of the imported directory roles.</documentation>
+                    <strength>strong</strength>
+                    <target>
+                        <path>description</path>
+                    </target>
+                </inbound>
+            </attribute>
+            <correlation>
+                <correlators>
+                    <filter>
+                        <name>entra-role-by-definition-id</name>
+                        <description>Matches the directory role to the role whose identifier equals the Entra role definition id.</description>
+                        <documentation>Only the immutable role definition id is used for correlation; display names can
+                            collide with group roles.</documentation>
+                        <ownerFilter>
+                            <q:and>
+                                <q:equal>
+                                    <q:path>identifier</q:path>
+                                    <expression>
+                                        <path>$shadow/attributes/icfs:uid</path>
+                                    </expression>
+                                </q:equal>
+                                <q:ref>
+                                    <q:path>archetypeRef</q:path>
+                                    <q:value oid="8a320ffe-4835-4499-bce9-62aa74bf66df" type="c:ArchetypeType"/>
+                                </q:ref>
+                            </q:and>
+                        </ownerFilter>
+                    </filter>
+                </correlators>
+            </correlation>
+            <synchronization>
+                <reaction>
+                    <name>unmatched -&gt; addFocus</name>
+                    <situation>unmatched</situation>
+                    <actions>
+                        <addFocus/>
+                    </actions>
+                </reaction>
+                <reaction>
+                    <name>unlinked -&gt; link</name>
+                    <situation>unlinked</situation>
+                    <actions>
+                        <link/>
+                    </actions>
+                </reaction>
+                <reaction>
+                    <name>linked -&gt; synchronize</name>
+                    <situation>linked</situation>
+                    <actions>
+                        <synchronize/>
+                    </actions>
+                </reaction>
+                <reaction>
+                    <name>deleted -&gt; unlink</name>
+                    <situation>deleted</situation>
+                    <actions>
+                        <unlink/>
+                    </actions>
+                </reaction>
+            </synchronization>
+        </objectType>
+        <objectType>
+            <kind>entitlement</kind>
+            <intent>enterpriseapp</intent>
+            <displayName>Enterprise applications</displayName>
+            <description>Entra enterprise applications (service principals) imported as orgs under Enterprise Applications.</description>
+            <default>false</default>
+            <delineation>
+                <objectClass>ri:CustomservicePrincipalObjectClass</objectClass>
+            </delineation>
+            <focus>
+                <type>OrgType</type>
+                <archetypeRef oid="2b89648a-2925-45ee-8cfd-d9965e050d1c" type="c:ArchetypeType"/>
+            </focus>
+            <attribute>
+                <ref>icfs:uid</ref>
+                <inbound>
+                    <name>entra-app-identifier</name>
+                    <description>Sets the org identifier to the Entra service principal object id.</description>
+                    <documentation>The service principal object id is the stable, unique key of an enterprise
+                        application; it is the correlation key and the value group application assignments refer to.</documentation>
+                    <strength>strong</strength>
+                    <target>
+                        <path>identifier</path>
+                    </target>
+                </inbound>
+                <inbound>
+                    <name>entra-app-parent-org</name>
+                    <description>Places every imported enterprise application org under the Enterprise Applications root org.</description>
+                    <documentation>All enterprise applications live in one branch of the org tree, directly below
+                        "Enterprise Applications", so they can be browsed together.</documentation>
+                    <strength>strong</strength>
+                    <expression>
+                        <assignmentTargetSearch>
+                            <targetType>OrgType</targetType>
+                            <oid>fa4b4ab8-c81c-4397-aa97-57d1a17e6166</oid>
+                            <assignmentProperties xsi:type="c:AssignmentPropertiesSpecificationType">
+                                <subtype>entra-test-parent-org</subtype>
+                            </assignmentProperties>
+                        </assignmentTargetSearch>
+                    </expression>
+                    <target>
+                        <path>assignment</path>
+                        <set>
+                            <condition>
+                                <script>
+                                    <code><![CDATA[
+return assignment?.subtype?.contains('entra-test-parent-org') ?: false
+]]></code>
+                                </script>
+                            </condition>
+                        </set>
+                    </target>
+                </inbound>
+            </attribute>
+            <attribute>
+                <ref>ri:displayName</ref>
+                <inbound>
+                    <name>entra-app-displayName</name>
+                    <description>Sets the org display name from the Entra application displayName.</description>
+                    <documentation>The Entra display name is shown as the org display name. The unique org name is
+                        derived from it by the Entra test naming template, whose iteration resolves duplicate names.</documentation>
+                    <strength>strong</strength>
+                    <target>
+                        <path>displayName</path>
+                    </target>
+                </inbound>
+            </attribute>
+            <attribute>
+                <ref>ri:assignedGroups</ref>
+                <displayName>Assigned groups</displayName>
+                <description>Object ids of the groups assigned to the application.</description>
+                <fetchStrategy>explicit</fetchStrategy>
+            </attribute>
+            <correlation>
+                <correlators>
+                    <filter>
+                        <name>entra-app-by-object-id</name>
+                        <description>Matches the application to the org whose identifier equals the Entra service principal object id.</description>
+                        <documentation>Application display names can repeat, so only the immutable object id is used
+                            for correlation.</documentation>
+                        <ownerFilter>
+                            <q:equal>
+                                <q:path>identifier</q:path>
+                                <expression>
+                                    <path>$shadow/attributes/icfs:uid</path>
+                                </expression>
+                            </q:equal>
+                        </ownerFilter>
+                    </filter>
+                </correlators>
+            </correlation>
+            <synchronization>
+                <reaction>
+                    <name>unmatched -&gt; addFocus</name>
+                    <situation>unmatched</situation>
+                    <actions>
+                        <addFocus/>
+                    </actions>
+                </reaction>
+                <reaction>
+                    <name>unlinked -&gt; link</name>
+                    <situation>unlinked</situation>
+                    <actions>
+                        <link/>
+                    </actions>
+                </reaction>
+                <reaction>
+                    <name>linked -&gt; synchronize</name>
+                    <situation>linked</situation>
+                    <actions>
+                        <synchronize/>
+                    </actions>
+                </reaction>
+                <reaction>
+                    <name>deleted -&gt; unlink</name>
+                    <situation>deleted</situation>
+                    <actions>
+                        <unlink/>
+                    </actions>
+                </reaction>
+            </synchronization>
+        </objectType>
+    </schemaHandling>
+    <projection>
+        <assignmentPolicyEnforcement>relative</assignmentPolicyEnforcement>
+    </projection>
+</resource>

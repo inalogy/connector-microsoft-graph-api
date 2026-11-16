@@ -1,0 +1,37 @@
+<role xmlns="http://midpoint.evolveum.com/xml/ns/public/common/common-3" xmlns:c="http://midpoint.evolveum.com/xml/ns/public/common/common-3" xmlns:org="http://midpoint.evolveum.com/xml/ns/public/common/org-3" xmlns:ri="http://midpoint.evolveum.com/xml/ns/public/resource/instance-3" oid="73280540-566b-403b-b271-d3e8afaa7593">
+    <name>MR:RES:EntraTest:DirectoryRole</name>
+    <description>Metarole of the Entra Role roles whose holders are managed from midPoint. Order 2: every user holding
+        the role gets a tenant-wide Entra directory role assignment for their Entra account. There is no order-1
+        construction: directory roles are built into Entra, cannot be created or deleted, and stay linked to the
+        shadow made by the import. Assigned only to explicitly chosen roles, never to all Entra Role roles.</description>
+    <assignment>
+        <targetRef oid="00000000-0000-0000-0000-000000000320" relation="org:default" type="c:ArchetypeType"/>
+    </assignment>
+    <inducement>
+        <description>Users holding the Entra Role role get the directory role assignment in Entra.</description>
+        <construction>
+            <resourceRef oid="a5e35e85-3e32-40a8-92f8-68796f48955b" relation="org:default" type="c:ResourceType"/>
+            <kind>account</kind>
+            <intent>default</intent>
+            <association>
+                <ref>ri:directoryRoles</ref>
+                <outbound>
+                    <name>entra-test-directory-role-assignment</name>
+                    <description>Assigns the user's Entra account the directory role linked to the role the user holds.</description>
+                    <strength>strong</strength>
+                    <expression>
+                        <associationFromLink>
+                            <projectionDiscriminator>
+                                <kind>entitlement</kind>
+                                <intent>directoryrole</intent>
+                            </projectionDiscriminator>
+                        </associationFromLink>
+                    </expression>
+                </outbound>
+            </association>
+        </construction>
+        <order>2</order>
+        <focusType>UserType</focusType>
+    </inducement>
+    <requestable>false</requestable>
+</role>

@@ -1,0 +1,33 @@
+<task xmlns="http://midpoint.evolveum.com/xml/ns/public/common/common-3"
+      xmlns:c="http://midpoint.evolveum.com/xml/ns/public/common/common-3"
+      xmlns:org="http://midpoint.evolveum.com/xml/ns/public/common/org-3"
+      xmlns:q="http://prism.evolveum.com/xml/ns/public/query-3"
+      xmlns:t="http://prism.evolveum.com/xml/ns/public/types-3"
+      oid="09e03714-25e2-4f48-8918-2bfdf61f1d56">
+    <name>[RECOMPUTE] Entra Test:Group roles</name>
+    <description>One-off recompute of all roles with the Entra Group archetype, so that the object template
+        assigns the group metarole (MR:RES:EntraTest:Group) to roles imported before it existed. Created suspended; start it manually.</description>
+    <assignment>
+        <targetRef oid="00000000-0000-0000-0000-000000000502" relation="org:default" type="c:ArchetypeType"/>
+    </assignment>
+    <ownerRef oid="00000000-0000-0000-0000-000000000002" relation="org:default" type="c:UserType"/>
+    <executionState>suspended</executionState>
+    <binding>loose</binding>
+    <activity>
+        <work>
+            <recomputation>
+                <objects>
+                    <type>RoleType</type>
+                    <query>
+                        <q:filter>
+                            <q:ref>
+                                <q:path>archetypeRef</q:path>
+                                <q:value oid="2d83df47-aa0e-4129-827d-70b53a884a4d"/>
+                            </q:ref>
+                        </q:filter>
+                    </query>
+                </objects>
+            </recomputation>
+        </work>
+    </activity>
+</task>
